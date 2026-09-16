@@ -80,6 +80,8 @@ for _spec in (
     OperationSpec("net.http", "net.http", "Make an HTTP request"),
     OperationSpec("ui.click", "ui.input", "Synthetic mouse click"),
     OperationSpec("ui.type", "ui.input", "Synthetic keyboard input"),
+    OperationSpec("ui.key", "ui.input", "Synthetic key chord"),
+    OperationSpec("ui.screenshot", "ui.input", "Capture the screen"),
     OperationSpec("clipboard.read", "clipboard.read", "Read the clipboard"),
     OperationSpec("clipboard.write", "clipboard.write", "Write the clipboard"),
 ):

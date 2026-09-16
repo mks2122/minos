@@ -6,9 +6,10 @@ A desktop agent runtime where every action — a syscall, a typed spreadsheet wr
 synthetic click — passes through one capability-scoped policy broker, with declared
 effects, full provenance, and a rollback you can actually trust.
 
-**Status: pre-alpha.** The broker, capability scopes, checkpointing, oracles, audit log,
-tier router, L1 filesystem/process adapters, L2 spreadsheet adapter, agent loop, Claude
-planner and eval harness work and are tested. No GUI tier, no memory, no skills yet.
+**Status: pre-alpha.** All three tiers, the broker, agent loop, Claude planner, eval
+harness, computer-state memory and verified skills work and are tested. The L3 GUI tier
+ships with a stub driver -- real pixel control means wiring up
+[cua-driver](https://github.com/trycua/cua), which is not done.
 Do not point this at data you cannot afford to lose.
 
 **Platforms:** Windows and Linux (Tier 1), macOS (Tier 2 — CI-green, not hand-verified).
@@ -143,7 +144,7 @@ See [EVALUATION.md](EVALUATION.md), including the list of what is not measured.
 
 ```bash
 uv sync --all-extras
-uv run pytest          # 224 passing
+uv run pytest          # 269 passing
 uv run ruff check src tests examples
 uv run mypy            # strict
 ```
@@ -156,6 +157,7 @@ uv run mypy            # strict
 |---|---|
 | [ARCHITECTURE.md](ARCHITECTURE.md) | The invariants, the life of an action, trust boundaries, core types |
 | [EVALUATION.md](EVALUATION.md) | Method, metrics, current numbers, and what is *not* measured |
+| [docs/STATUS.md](docs/STATUS.md) | What is built, what is stubbed, what is missing |
 | [SECURITY.md](SECURITY.md) | Threat model — and what this does **not** protect against |
 | [docs/PLAN.md](docs/PLAN.md) | Milestones, build-vs-borrow, metrics |
 | [docs/PORTABILITY.md](docs/PORTABILITY.md) | Cross-platform design |

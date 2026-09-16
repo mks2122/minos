@@ -34,6 +34,7 @@ from .skills import Skill, SkillPlanner, SkillStore, promote, why_not_promotable
 from .tiers.base import CapabilityManifest, OperationUnsupported, Preparation
 from .tiers.l1_system import FilesystemAdapter, ProcessAdapter
 from .tiers.l2_adapters import TabularAdapter
+from .tiers.l3_gui import GuiAdapter, StubDriver
 from .types import (
     ActionRequest,
     AdmissionDecision,
@@ -64,6 +65,7 @@ __all__ = [
     "FileTreeOracle",
     "FilesystemAdapter",
     "Grant",
+    "GuiAdapter",
     "Invocation",
     "MemoryStore",
     "NoAdapter",
@@ -86,6 +88,7 @@ __all__ = [
     "Skill",
     "SkillPlanner",
     "SkillStore",
+    "StubDriver",
     "TabularAdapter",
     "Tier",
     "Trajectory",
