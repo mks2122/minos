@@ -159,8 +159,44 @@ def test_run_rejects_a_bad_workspace(tmp_path, capsys):
 
 
 def test_run_rejects_an_unknown_planner(workspace, capsys):
-    assert main(["run", "goal", "-w", str(workspace), "--planner", "psychic"]) == 2
-    assert "unknown planner" in capsys.readouterr().err
+    """argparse rejects it and lists the valid choices, which beats a custom error."""
+    with pytest.raises(SystemExit) as exit_info:
+        main(["run", "goal", "-w", str(workspace), "--planner", "psychic"])
+    assert exit_info.value.code == 2
+    err = capsys.readouterr().err
+    assert "invalid choice" in err
+    assert "claude" in err
+    assert "local" in err
+
+
+def test_local_planner_is_selectable(workspace):
+    from writ.__main__ import _planner
+    from writ.planner.local import LocalPlanner
+
+    args = build_parser().parse_args(
+        [
+            "run",
+            "goal",
+            "--planner",
+            "local",
+            "--base-url",
+            "http://localhost:1234/v1",
+            "--model",
+            "qwen3:8b",
+        ]
+    )
+    planner = _planner(args, ("fs.read",))
+    assert isinstance(planner, LocalPlanner)
+    assert planner.base_url == "http://localhost:1234/v1"
+    assert planner.model == "qwen3:8b"
+
+
+def test_local_planner_does_not_inherit_the_claude_default_model():
+    """--planner local without --model must not ask Ollama for claude-opus-5."""
+    from writ.__main__ import _planner
+
+    args = build_parser().parse_args(["run", "goal", "--planner", "local"])
+    assert _planner(args, ("fs.read",)).model == "qwen3:8b"
 
 
 def test_run_prints_the_scopes_it_will_use(workspace, tmp_path, capsys, monkeypatch):

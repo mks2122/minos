@@ -427,3 +427,169 @@ def test_claude_planner_does_not_use_the_sdk_tool_runner():
     assert ".tool_runner(" not in text
     assert "toolRunner" not in text
     assert "client.messages.create(" in text
+
+
+# -- local planner ---------------------------------------------------------
+
+
+def test_openai_tool_translation_preserves_the_schema():
+    """Schemas are authored once, in Anthropic's shape, and translated."""
+    from writ.planner.local import to_openai_tools
+
+    translated = to_openai_tools(tool_definitions(("sheet.set_cell",)))
+    by_name = {t["function"]["name"]: t for t in translated}
+
+    assert set(by_name) == {"sheet_set_cell", "finish"}
+    cell = by_name["sheet_set_cell"]
+    assert cell["type"] == "function"
+    schema = cell["function"]["parameters"]
+    assert schema["additionalProperties"] is False
+    assert set(schema["required"]) == {"path", "cell", "value"}
+
+
+SET_CELL_ARGS = '{"path": "/ws/a.csv", "cell": "B4", "value": "1"}'
+
+
+def test_local_planner_translates_a_tool_call(monkeypatch):
+    from writ.planner.local import LocalPlanner
+
+    planner = LocalPlanner(operations=("sheet.set_cell",), model="qwen3:8b")
+    monkeypatch.setattr(
+        planner,
+        "_post",
+        lambda: {
+            "choices": [
+                {
+                    "message": {
+                        "role": "assistant",
+                        "content": "setting the cell",
+                        "tool_calls": [
+                            {
+                                "id": "call_1",
+                                "function": {
+                                    "name": "sheet_set_cell",
+                                    "arguments": SET_CELL_ARGS,
+                                },
+                            }
+                        ],
+                    }
+                }
+            ]
+        },
+    )
+    step = planner.next_action("set B4", [], ScopeSet.parse(["fs.write:/ws/**"]))
+
+    assert isinstance(step, ActionRequest)
+    assert step.operation == "sheet.set_cell"
+    assert step.params == {"path": "/ws/a.csv", "cell": "B4", "value": "1"}
+
+
+def test_local_planner_takes_only_the_first_of_several_calls(monkeypatch):
+    """Small models batch tool calls. Half-running a batch is worse than one call."""
+    from writ.planner.local import LocalPlanner
+
+    planner = LocalPlanner(operations=("fs.read", "fs.write"))
+    monkeypatch.setattr(
+        planner,
+        "_post",
+        lambda: {
+            "choices": [
+                {
+                    "message": {
+                        "role": "assistant",
+                        "tool_calls": [
+                            {
+                                "id": "a",
+                                "function": {"name": "fs_read", "arguments": '{"path": "/ws/a"}'},
+                            },
+                            {
+                                "id": "b",
+                                "function": {
+                                    "name": "fs_write",
+                                    "arguments": '{"path": "/ws/b", "content": "x"}',
+                                },
+                            },
+                        ],
+                    }
+                }
+            ]
+        },
+    )
+    step = planner.next_action("do two things", [], ScopeSet())
+    assert isinstance(step, ActionRequest)
+    assert step.operation == "fs.read"
+
+
+def test_local_planner_fails_closed_on_malformed_json(monkeypatch):
+    """Bad arguments become empty params, which the broker denies for lack of a subject."""
+    from writ.planner.local import LocalPlanner
+
+    planner = LocalPlanner(operations=("fs.read",))
+    monkeypatch.setattr(
+        planner,
+        "_post",
+        lambda: {
+            "choices": [
+                {
+                    "message": {
+                        "role": "assistant",
+                        "tool_calls": [
+                            {"id": "a", "function": {"name": "fs_read", "arguments": "{not json"}}
+                        ],
+                    }
+                }
+            ]
+        },
+    )
+    step = planner.next_action("read", [], ScopeSet())
+    assert isinstance(step, ActionRequest)
+    assert step.params == {}
+
+
+def test_local_planner_handles_prose_instead_of_a_tool_call(monkeypatch):
+    from writ.planner.local import LocalPlanner
+
+    planner = LocalPlanner(operations=("fs.read",))
+    monkeypatch.setattr(
+        planner,
+        "_post",
+        lambda: {
+            "choices": [
+                {"message": {"role": "assistant", "content": "I think you should read the file."}}
+            ]
+        },
+    )
+    step = planner.next_action("read", [], ScopeSet())
+    assert isinstance(step, Done)
+    assert not step.succeeded
+    assert "prose instead of a tool call" in step.summary
+
+
+def test_local_planner_explains_a_dead_server(monkeypatch):
+    import urllib.error
+
+    from writ.planner.local import LocalPlanner
+
+    planner = LocalPlanner(operations=("fs.read",), base_url="http://localhost:1/v1")
+
+    def boom():
+        raise urllib.error.URLError("connection refused")
+
+    monkeypatch.setattr(planner, "_post", boom)
+    step = planner.next_action("read", [], ScopeSet())
+    assert isinstance(step, Done)
+    assert not step.succeeded
+    assert "Is the server running?" in step.summary
+
+
+def test_local_planner_tells_the_model_it_is_small(monkeypatch):
+    from writ.planner.local import LOCAL_SYSTEM_SUFFIX, LocalPlanner
+
+    planner = LocalPlanner(operations=("fs.read",))
+    monkeypatch.setattr(planner, "_post", lambda: {"choices": [{"message": {"content": "hm"}}]})
+    planner.next_action("goal", [], ScopeSet.parse(["fs.read:/ws/**"]))
+
+    system = planner._messages[0]
+    assert system["role"] == "system"
+    assert "Exactly one tool call per turn" in system["content"]
+    assert LOCAL_SYSTEM_SUFFIX in system["content"]
