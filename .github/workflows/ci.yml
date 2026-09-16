@@ -34,6 +34,13 @@ jobs:
       - name: Test
         run: uv run --python ${{ matrix.python }} pytest -q
 
+      # The reference solutions must keep passing, or the suite has stopped
+      # measuring anything. Also checks per-task regressions, not just the rate.
+      - name: Eval (reference planner)
+        run: >
+          uv run --python ${{ matrix.python }} python -m writ.evals
+          --baseline eval/baseline-scripted.json
+
   lint:
     name: lint + types
     runs-on: ubuntu-latest
