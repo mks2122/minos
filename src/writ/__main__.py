@@ -149,16 +149,23 @@ def cmd_run(args: argparse.Namespace) -> int:
 
 
 def _planner(args: argparse.Namespace, operations: tuple[str, ...]):  # type: ignore[no-untyped-def]
-    if args.planner == "local":
+    choice = args.planner
+    if choice == "auto":
+        from .planner.local import server_available
+
+        choice = "local" if server_available(args.base_url) else "claude"
+        print(f"planner   : {choice} (auto-detected)")
+
+    if choice == "local":
         from .planner.local import LocalPlanner
 
         return LocalPlanner(
             operations=operations,
             base_url=args.base_url,
-            model=args.model if args.model != "claude-opus-5" else "qwen3:8b",
+            model=args.model or "qwen3:8b",
         )
-    if args.planner != "claude":
-        raise ImportError(f"unknown planner {args.planner!r}")
+    if choice != "claude":
+        raise ImportError(f"unknown planner {choice!r}")
     try:
         from .planner.claude import ClaudePlanner
     except ImportError as exc:
@@ -167,7 +174,7 @@ def _planner(args: argparse.Namespace, operations: tuple[str, ...]):  # type: ig
             "    uv sync --extra claude\n"
             "and credentials in ANTHROPIC_API_KEY (or `ant auth login`)."
         ) from exc
-    return ClaudePlanner(operations=operations, model=args.model)
+    return ClaudePlanner(operations=operations, model=args.model or "claude-opus-5")
 
 
 # -- writ demo -------------------------------------------------------------
@@ -315,13 +322,22 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="auto-approve prompts, INCLUDING irreversible effects",
     )
-    run.add_argument("--planner", default="claude", choices=["claude", "local"])
+    run.add_argument(
+        "--planner",
+        default="auto",
+        choices=["auto", "local", "claude"],
+        help="auto prefers a local server when one is listening",
+    )
     run.add_argument(
         "--base-url",
         default="http://localhost:11434/v1",
         help="OpenAI-compatible endpoint for --planner local (Ollama, LM Studio, ...)",
     )
-    run.add_argument("--model", default="claude-opus-5")
+    run.add_argument(
+        "--model",
+        default=None,
+        help="defaults to qwen3:8b for local, claude-opus-5 for claude",
+    )
     run.add_argument("--max-steps", type=int, default=20)
     run.add_argument("--remember", action="store_true", help="record to the memory index")
     run.add_argument("--state", default=str(DEFAULT_STATE))
