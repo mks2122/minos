@@ -4,26 +4,39 @@ Works with Ollama, LM Studio, llama.cpp's server, vLLM and anything else
 speaking ``/v1/chat/completions`` with tool calling. Uses ``urllib`` rather than
 an SDK: this is a plain local HTTP call and does not warrant a dependency.
 
-Read this before expecting it to work
--------------------------------------
+Why this is a first-class path, not a consolation prize
+------------------------------------------------------
 
-Grounding and planning are different problems, and local models are good at one
-of them. On OSWorld, the strongest open-weight model is 235B-class (~66.7%);
-a 32B that fits a 24GB card scores ~5.9%, and 8GB fits smaller still. That gap
-is not a tuning problem.
+Published OSWorld numbers make local models look hopeless at desktop work --
+a 32B scoring single digits. **Those numbers are about GUI agents**: look at a
+screenshot, locate a control, click the right pixel, repeat for fifty steps.
+That is not the job here.
 
-So this planner is expected to do badly at multi-step desktop work, and the
-honest thing is to say so in the module rather than in a footnote. Its real uses:
+This runtime prefers typed tools, so the planner's actual task is to choose one
+of about a dozen well-defined functions and fill in its arguments::
 
-* **measuring the gap yourself** -- point the eval suite at it and get your own
-  number instead of trusting anyone's, including mine
-* **air-gapped operation**, where a weak planner that never phones home beats a
-  strong one you are not allowed to call
-* **replaying skills**, which needs no planner at all
+    sheet.set_cell(path=..., cell="B4", value="48200")
 
-That last one matters most. Once a task is a verified skill, replay makes
-**zero model calls** -- local or remote. The way to run this cheaply is not a
-smaller model doing the same thinking badly; it is not doing the thinking twice.
+That is **tool calling**, which 7-8B models do competently, and it is a
+different and far easier problem than pixel-driving. The tier hierarchy is what
+converts the hard problem into the easy one -- which means a local planner is
+the *intended* configuration for L1/L2 work, not a degraded fallback.
+
+Where a small model still struggles:
+
+* long horizons. Twenty-step plans drift; five-step plans mostly do not.
+* L3 GUI work, where the OSWorld numbers genuinely do apply.
+* recovering from a surprise, rather than following a known shape.
+
+Three things make that manageable. Scopes bound what a confused planner can
+reach. Every effect is verified and reversed if wrong, so a bad step costs a
+retry rather than your data. And a verified skill replays with **zero** model
+calls -- the way to run this cheaply is not a smaller model doing the same
+thinking badly, it is not doing the thinking twice.
+
+Measure it rather than trusting this docstring::
+
+    writ eval --planner local --model qwen3:8b
 """
 
 from __future__ import annotations
@@ -40,10 +53,20 @@ from .base import Done, Observation, Step
 from .claude import SYSTEM_PROMPT
 from .schemas import operation_for_tool, tool_definitions
 
-__all__ = ["LocalPlanner", "to_openai_tools"]
+__all__ = ["SUGGESTED_MODELS", "LocalPlanner", "server_available", "to_openai_tools"]
 
 DEFAULT_BASE_URL = "http://localhost:11434/v1"
 DEFAULT_MODEL = "qwen3:8b"
+
+# Models that fit a consumer GPU and are competent at tool calling.
+# VRAM figures are Q4_K_M weights; add ~1GB for KV cache.
+SUGGESTED_MODELS: dict[str, str] = {
+    "qwen3:8b": "~5.0 GB -- good tool calling, the default",
+    "qwen2.5:7b-instruct": "~4.7 GB -- solid, widely available",
+    "llama3.1:8b": "~4.9 GB -- good tool calling",
+    "qwen3:4b": "~2.6 GB -- for 6 GB cards; shorter plans only",
+    "qwen3:14b": "~8.5 GB -- needs 12 GB+, noticeably better at longer plans",
+}
 
 LOCAL_SYSTEM_SUFFIX = """
 
@@ -53,6 +76,21 @@ You are a smaller model than this runtime's default, so keep it simple:
 - If two consecutive attempts fail, call `finish` with succeeded=false rather \
 than trying a third variation.
 - Do not invent file paths. List a directory to find out what exists."""
+
+
+def server_available(base_url: str = DEFAULT_BASE_URL, timeout: float = 1.5) -> bool:
+    """Is a local OpenAI-compatible server listening?
+
+    Used to pick a planner automatically. Fails fast and quietly -- a missing
+    local server is an ordinary condition, not an error.
+    """
+    url = f"{base_url.rstrip('/')}/models"
+    try:
+        request = urllib.request.Request(url, method="GET")
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            return bool(200 <= response.status < 500)
+    except (urllib.error.URLError, TimeoutError, OSError, ValueError):
+        return False
 
 
 def to_openai_tools(tools: list[dict[str, Any]]) -> list[dict[str, Any]]:

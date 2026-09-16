@@ -39,6 +39,16 @@ its compromise survivable — it cannot do anything it was not already scoped to
 
 ```bash
 uv sync --all-extras
+uv run python main.py
+```
+
+An interactive menu -- pick a number, type your own goal. It ships with a sample
+`data/` workspace so the first option works immediately, starts **read-only**, and
+prints the exact scopes before it does anything.
+
+There is a flag-driven CLI too, if you prefer:
+
+```bash
 uv run writ --help
 ```
 
@@ -67,28 +77,48 @@ uv run writ run "set Q3 revenue to 48200" -w ./data --allow-write
 `--yes`, irreversible actions prompt. **`--yes` auto-approves those too**, which is
 why it prints a warning.
 
-### Local models
-
-The planner is swappable, and a local one ships. Any OpenAI-compatible endpoint
-works -- Ollama, LM Studio, llama.cpp's server, vLLM:
+### Local models are a first-class path
 
 ```bash
-ollama serve
-uv run writ run "set Q3 revenue to 48200" -w ./data --allow-write   --planner local --model qwen3:8b
-
-uv run writ eval --planner local --model qwen3:8b   # measure it yourself
+ollama pull qwen3:8b && ollama serve
+uv run python main.py              # auto-detects the server and uses it
 ```
 
-**Expect it to do badly at planning, and do not take my word for it -- measure.**
-On OSWorld the strongest open-weight model is 235B-class (~66.7%); a 32B that fits
-a 24GB card scores ~5.9%. Grounding and planning are different problems and local
-models are good at one of them. The eval suite exists precisely so you can get your
-own number instead of trusting anyone's.
+`--planner auto` (the default) prefers a local server whenever one is listening.
 
-The real local story is not a smaller model doing the same thinking badly. It is
-**not doing the thinking twice**: once a task is promoted to a verified skill,
-replay makes *zero* model calls -- local or remote -- and is faster and more
-reliable than either.
+**Why this works here when OSWorld numbers say it shouldn't.** Those numbers are
+about *GUI agents*: look at a screenshot, find a control, click the right pixel,
+repeat fifty times. This runtime prefers typed tools, so the planner's job is to
+pick one of about a dozen functions and fill in its arguments --
+
+```
+sheet.set_cell(path=..., cell="B4", value="48200")
+```
+
+-- which is **tool calling**, and 7-8B models do it competently. The tier hierarchy
+is what turns the hard problem into the easy one. A local planner is the intended
+configuration for L1/L2 work, not a consolation prize.
+
+Models that fit a consumer GPU (Q4, add ~1GB for KV cache):
+
+| Model | VRAM | |
+|---|---|---|
+| `qwen3:8b` | ~5.0 GB | good tool calling, the default |
+| `qwen2.5:7b-instruct` | ~4.7 GB | solid, widely available |
+| `llama3.1:8b` | ~4.9 GB | good tool calling |
+| `qwen3:4b` | ~2.6 GB | for 6 GB cards; short plans only |
+
+Where a small model still struggles: long horizons, L3 GUI work (the OSWorld numbers
+do apply there), and recovering from surprises. Scopes bound what a confused planner
+can reach, every effect is verified and reversed if wrong, and a verified skill
+replays with **zero** model calls -- so the cheapest path is not a smaller model
+thinking badly, it is not thinking twice.
+
+Measure it rather than trusting any of the above:
+
+```bash
+uv run writ eval --planner local --model qwen3:8b
+```
 
 ### What `writ demo` shows
 
@@ -194,7 +224,7 @@ See [EVALUATION.md](EVALUATION.md), including the list of what is not measured.
 
 ```bash
 uv sync --all-extras
-uv run pytest          # 297 passing
+uv run pytest          # 321 passing
 uv run ruff check src tests examples
 uv run mypy            # strict
 ```
