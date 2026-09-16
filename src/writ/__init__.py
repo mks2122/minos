@@ -13,11 +13,20 @@ See ARCHITECTURE.md.
 
 from __future__ import annotations
 
+from .agent import Agent, AgentLimits
 from .audit import AuditLog
 from .broker import Broker, cli_approver
 from .capabilities import capability_for, known_operations
 from .checkpoint import FileCheckpointStore
 from .oracles import FileHashOracle, FileTreeOracle, NullOracle, PathExistsOracle
+from .planner import (
+    CallablePlanner,
+    Done,
+    Observation,
+    Planner,
+    ScriptedPlanner,
+    Trajectory,
+)
 from .router import NoAdapter, Routed, Router, RoutingStats
 from .scopes import Scope, ScopeSet, ScopeViolation
 from .tiers.base import CapabilityManifest, OperationUnsupported, Preparation
@@ -39,9 +48,13 @@ __version__ = "0.0.1.dev0"
 __all__ = [
     "ActionRequest",
     "AdmissionDecision",
+    "Agent",
+    "AgentLimits",
     "AuditLog",
     "Broker",
+    "CallablePlanner",
     "CapabilityManifest",
+    "Done",
     "EffectClass",
     "EffectContract",
     "FileCheckpointStore",
@@ -52,9 +65,11 @@ __all__ = [
     "Invocation",
     "NoAdapter",
     "NullOracle",
+    "Observation",
     "OperationUnsupported",
     "Outcome",
     "PathExistsOracle",
+    "Planner",
     "Preparation",
     "ProcessAdapter",
     "Routed",
@@ -63,8 +78,10 @@ __all__ = [
     "Scope",
     "ScopeSet",
     "ScopeViolation",
+    "ScriptedPlanner",
     "TabularAdapter",
     "Tier",
+    "Trajectory",
     "__version__",
     "capability_for",
     "cli_approver",

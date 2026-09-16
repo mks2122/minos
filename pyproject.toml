@@ -20,6 +20,7 @@ dependencies = []
 
 [project.optional-dependencies]
 cli = ["typer>=0.12"]
+claude = ["anthropic>=0.40"]
 
 [dependency-groups]
 dev = [
@@ -54,3 +55,8 @@ select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
 python_version = "3.11"
 strict = true
 files = ["src/writ"]
+
+# anthropic is an optional extra. A checkout without it must still typecheck.
+[[tool.mypy.overrides]]
+module = ["anthropic.*"]
+ignore_missing_imports = true
