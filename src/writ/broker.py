@@ -25,6 +25,7 @@ from pathlib import Path
 from typing import Any
 
 from .audit import AuditLog
+from .capabilities import capability_for
 from .checkpoint import CheckpointStore
 from .oracles import NullOracle, compare
 from .scopes import ScopeSet
@@ -32,6 +33,7 @@ from .types import (
     AdmissionDecision,
     CheckpointId,
     EffectClass,
+    Grant,
     Invocation,
     OracleResult,
     Outcome,
@@ -80,22 +82,6 @@ def cli_approver(invocation: Invocation, decision: AdmissionDecision) -> bool:
     return input("  allow? [y/N] ").strip().lower() in {"y", "yes"}
 
 
-# Which capability an operation needs, and which scope subject it applies to.
-_OPERATION_CAPABILITY: dict[str, str] = {
-    "fs.read": "fs.read",
-    "fs.write": "fs.write",
-    "fs.delete": "fs.delete",
-    "fs.copy": "fs.write",
-    "fs.move": "fs.write",
-    "proc.spawn": "proc.spawn",
-    "net.http": "net.http",
-    "ui.click": "ui.input",
-    "ui.type": "ui.input",
-    "clipboard.read": "clipboard.read",
-    "clipboard.write": "clipboard.write",
-}
-
-
 @dataclass
 class Broker:
     scopes: ScopeSet
@@ -142,31 +128,32 @@ class Broker:
     def admit(self, invocation: Invocation) -> AdmissionDecision:
         """Steps 1-3. Pure: no side effects, safe to call for preview."""
         contract = invocation.contract
-        capability = _OPERATION_CAPABILITY.get(invocation.request.operation)
 
-        if capability is None:
+        if capability_for(invocation.request.operation) is None:
             return AdmissionDecision(
                 verdict="deny",
                 rationale=(
                     f"unknown operation {invocation.request.operation!r}; "
-                    "operations must map to a declared capability"
+                    "operations must be registered in writ.capabilities"
                 ),
             )
 
-        subjects = self._subjects(invocation, capability)
-        if not subjects:
+        grants = invocation.grants or self._derive_grants(invocation)
+        if not grants:
             return AdmissionDecision(
                 verdict="deny",
                 rationale=f"{invocation.request.operation} declared no subject to check",
             )
 
         matched: list[str] = []
-        for subject in subjects:
-            permitted, scope = self.scopes.check(capability, subject)
+        for grant in grants:
+            permitted, scope = self.scopes.check(grant.capability, grant.subject)
             if not permitted:
                 return AdmissionDecision(
                     verdict="deny",
-                    rationale=f"{capability} on {subject} is outside the granted scopes",
+                    rationale=(
+                        f"{grant.capability} on {grant.subject} is outside the granted scopes"
+                    ),
                     denied_by=str(scope) if scope else None,
                 )
             assert scope is not None
@@ -183,7 +170,7 @@ class Broker:
         if contract.effect_class is EffectClass.COMPENSABLE:
             compensation = contract.compensation
             assert compensation is not None  # enforced in EffectContract.__post_init__
-            comp_capability = _OPERATION_CAPABILITY.get(compensation.operation)
+            comp_capability = capability_for(compensation.operation)
             if comp_capability is None:
                 return AdmissionDecision(
                     verdict="prompt",
@@ -213,16 +200,23 @@ class Broker:
 
     # -- internals ---------------------------------------------------------
 
-    def _subjects(self, invocation: Invocation, capability: str) -> list[str]:
-        """What the scope check is applied to.
+    def _derive_grants(self, invocation: Invocation) -> tuple[Grant, ...]:
+        """Conservative fallback when an adapter declared no explicit grants.
 
-        Prefer the contract's declared targets — they are what will actually be
-        touched, and the checkpoint covers exactly them. Fall back to params for
-        non-path capabilities.
+        Prefers the contract's declared targets -- they are what will actually be
+        touched, and the checkpoint covers exactly them -- falling back to
+        conventional param keys. An operation that smuggles a path under an
+        unrecognised key yields nothing, and an empty grant set is denied.
         """
-        if invocation.contract.targets:
-            return [str(t) for t in invocation.contract.targets]
-        return _params_subjects(invocation.request.params)
+        capability = capability_for(invocation.request.operation)
+        if capability is None:
+            return ()
+        subjects = (
+            [str(t) for t in invocation.contract.targets]
+            if invocation.contract.targets
+            else _params_subjects(invocation.request.params)
+        )
+        return tuple(Grant(capability, subject) for subject in subjects)
 
     def _predict(self, invocation: Invocation) -> dict[str, Any]:
         contract = invocation.contract
@@ -250,7 +244,7 @@ class Broker:
         before = oracle.observe()
 
         try:
-            executor(invocation)
+            result = executor(invocation)
         except Exception as exc:
             reversal = self._reverse(checkpoint_id)
             status = "reconciliation_required" if reversal and not reversal.succeeded else "failed"
@@ -285,6 +279,7 @@ class Broker:
                 status="ok",
                 checkpoint_id=checkpoint_id,
                 observed=observed,
+                result=result,
             )
 
         # Mismatch: reality did not match the contract. Try to put it back.
@@ -377,6 +372,7 @@ class Broker:
         observed: OracleResult | None = None,
         reversal: ReversalOutcome | None = None,
         predicted: dict[str, Any] | None = None,
+        result: Any = None,
         error: str = "",
     ) -> Outcome:
         record = ProvenanceRecord(
@@ -399,6 +395,7 @@ class Broker:
             reversal=reversal,
             checkpoint_id=checkpoint_id,
             predicted=predicted,
+            result=result,
             error=error,
         )
 

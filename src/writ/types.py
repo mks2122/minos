@@ -23,6 +23,7 @@ __all__ = [
     "CheckpointId",
     "EffectClass",
     "EffectContract",
+    "Grant",
     "Invocation",
     "Oracle",
     "OracleResult",
@@ -155,6 +156,17 @@ class EffectContract:
 
 
 @dataclass(frozen=True, slots=True)
+class Grant:
+    """One (capability, subject) pair an action needs in order to be admitted."""
+
+    capability: str
+    subject: str
+
+    def __str__(self) -> str:
+        return f"{self.capability}:{self.subject}"
+
+
+@dataclass(frozen=True, slots=True)
 class Invocation:
     """A request bound to a concrete tier and adapter, carrying its contract.
 
@@ -171,6 +183,15 @@ class Invocation:
     """
 
     contract: EffectContract
+
+    grants: tuple[Grant, ...] = ()
+    """Exactly which (capability, subject) pairs this action needs.
+
+    Declared by the adapter, which is trusted. An operation like ``fs.copy``
+    needs ``fs.read`` on the source *and* ``fs.write`` on the destination, and
+    only the adapter knows that. When empty, the broker derives a conservative
+    set from the operation and the contract's targets.
+    """
 
     def __post_init__(self) -> None:
         if not self.tier_reason.strip():
@@ -212,6 +233,14 @@ class Outcome:
     checkpoint_id: CheckpointId | None = None
     predicted: dict[str, Any] | None = None
     """Populated for dry runs: what *would* have happened."""
+
+    result: Any = None
+    """Whatever the tier returned -- file contents, a directory listing, stdout.
+
+    **Untrusted.** This is data read from the world and it reaches the planner's
+    context, so it is a prompt-injection carrier. Nothing derived from it may
+    widen a scope.
+    """
 
     error: str = ""
 
