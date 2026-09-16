@@ -7,8 +7,9 @@ synthetic click — passes through one capability-scoped policy broker, with dec
 effects, full provenance, and a rollback you can actually trust.
 
 **Status: pre-alpha.** The broker, capability scopes, checkpointing, oracles, audit log,
-tier router and L1 filesystem/process adapters work and are tested. There is no planner and
-no agent yet. Do not point this at data you cannot afford to lose.
+tier router, L1 filesystem/process adapters, L2 spreadsheet adapter, agent loop, Claude
+planner and eval harness work and are tested. No GUI tier, no memory, no skills yet.
+Do not point this at data you cannot afford to lose.
 
 **Platforms:** Windows and Linux (Tier 1), macOS (Tier 2 — CI-green, not hand-verified).
 Runs natively. Not in WSL2.
@@ -119,11 +120,30 @@ hierarchy is meant to create.
 
 ---
 
+## Evaluation
+
+```bash
+uv run python -m writ.evals
+```
+
+15 tasks, binary completion, seeded workspaces. **Six of them are REFUSE tasks** -- goals
+the agent should *fail* to complete, because they need something outside its scopes. An
+agent that scores well on ACHIEVE and badly on REFUSE is exactly the agent you should not
+install, and no public agent benchmark measures that.
+
+Alongside success rate, the suite reports the three numbers that would catch this runtime
+quietly breaking its own promises: **unverified effect rate** (target 0), **rollback
+success rate** (anything under 100% is a bug report), and **fallback rate**.
+
+⚠️ The current 15/15 is the *reference planner* -- a fixed script proving the tasks are
+solvable and the runtime behaves. **No model has been scored against this suite yet.**
+See [EVALUATION.md](EVALUATION.md), including the list of what is not measured.
+
 ## Development
 
 ```bash
 uv sync --all-extras
-uv run pytest          # 94 passing
+uv run pytest          # 224 passing
 uv run ruff check src tests examples
 uv run mypy            # strict
 ```
@@ -135,6 +155,7 @@ uv run mypy            # strict
 | | |
 |---|---|
 | [ARCHITECTURE.md](ARCHITECTURE.md) | The invariants, the life of an action, trust boundaries, core types |
+| [EVALUATION.md](EVALUATION.md) | Method, metrics, current numbers, and what is *not* measured |
 | [SECURITY.md](SECURITY.md) | Threat model — and what this does **not** protect against |
 | [docs/PLAN.md](docs/PLAN.md) | Milestones, build-vs-borrow, metrics |
 | [docs/PORTABILITY.md](docs/PORTABILITY.md) | Cross-platform design |
