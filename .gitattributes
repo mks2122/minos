@@ -1,0 +1,18 @@
+# Normalise to LF in the repository; check out native on Windows.
+# A cross-platform project cannot afford line endings that differ per clone.
+* text=auto eol=lf
+
+*.py    text eol=lf diff=python
+*.md    text eol=lf
+*.toml  text eol=lf
+*.yml   text eol=lf
+*.yaml  text eol=lf
+*.json  text eol=lf
+*.lock  text eol=lf linguist-generated=true
+
+# Audit logs are append-only JSONL; never merge them.
+*.jsonl -merge
+
+*.png   binary
+*.jpg   binary
+*.gif   binary

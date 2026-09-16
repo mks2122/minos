@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# Portability is enforced by CI, not by intentions. All three platforms from the
+# first commit, while fixing a break still costs minutes.
+jobs:
+  test:
+    name: ${{ matrix.os }} / py${{ matrix.python }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python: ["3.11", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install ${{ matrix.python }}
+
+      - name: Sync
+        run: uv sync --all-extras --python ${{ matrix.python }}
+
+      - name: Test
+        run: uv run --python ${{ matrix.python }} pytest -q
+
+  lint:
+    name: lint + types
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv sync --all-extras
+      - name: Ruff (lint)
+        run: uv run ruff check src tests
+      - name: Ruff (format)
+        run: uv run ruff format --check src tests
+      - name: Mypy (strict)
+        run: uv run mypy

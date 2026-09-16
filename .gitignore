@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+dist/
+build/
+
+# uv
+uv.lock.bak
+
+# Tooling
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# writ runtime state — never commit audit logs or checkpoints
+*.jsonl
+.writ/
+checkpoints/
+
+# Local
+.env
+.DS_Store
+Thumbs.db
