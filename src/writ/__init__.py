@@ -18,6 +18,7 @@ from .audit import AuditLog
 from .broker import Broker, cli_approver
 from .capabilities import capability_for, known_operations
 from .checkpoint import FileCheckpointStore
+from .memory import MemoryStore, Resolution, resolve
 from .oracles import FileHashOracle, FileTreeOracle, NullOracle, PathExistsOracle
 from .planner import (
     CallablePlanner,
@@ -63,6 +64,7 @@ __all__ = [
     "FilesystemAdapter",
     "Grant",
     "Invocation",
+    "MemoryStore",
     "NoAdapter",
     "NullOracle",
     "Observation",
@@ -72,6 +74,7 @@ __all__ = [
     "Planner",
     "Preparation",
     "ProcessAdapter",
+    "Resolution",
     "Routed",
     "Router",
     "RoutingStats",
@@ -86,4 +89,5 @@ __all__ = [
     "capability_for",
     "cli_approver",
     "known_operations",
+    "resolve",
 ]
