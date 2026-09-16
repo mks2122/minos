@@ -149,6 +149,14 @@ def cmd_run(args: argparse.Namespace) -> int:
 
 
 def _planner(args: argparse.Namespace, operations: tuple[str, ...]):  # type: ignore[no-untyped-def]
+    if args.planner == "local":
+        from .planner.local import LocalPlanner
+
+        return LocalPlanner(
+            operations=operations,
+            base_url=args.base_url,
+            model=args.model if args.model != "claude-opus-5" else "qwen3:8b",
+        )
     if args.planner != "claude":
         raise ImportError(f"unknown planner {args.planner!r}")
     try:
@@ -307,7 +315,12 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="auto-approve prompts, INCLUDING irreversible effects",
     )
-    run.add_argument("--planner", default="claude")
+    run.add_argument("--planner", default="claude", choices=["claude", "local"])
+    run.add_argument(
+        "--base-url",
+        default="http://localhost:11434/v1",
+        help="OpenAI-compatible endpoint for --planner local (Ollama, LM Studio, ...)",
+    )
     run.add_argument("--model", default="claude-opus-5")
     run.add_argument("--max-steps", type=int, default=20)
     run.add_argument("--remember", action="store_true", help="record to the memory index")

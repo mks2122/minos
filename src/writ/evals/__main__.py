@@ -21,10 +21,31 @@ from .harness import PlannerFactory, run_suite
 from .suite import SUITE, scripted_factory
 from .task import Task
 
+_OPERATIONS = (
+    "fs.read",
+    "fs.list",
+    "fs.stat",
+    "fs.write",
+    "fs.copy",
+    "fs.move",
+    "fs.delete",
+    "sheet.list",
+    "sheet.read_cell",
+    "sheet.read_range",
+    "sheet.find_row",
+    "sheet.set_cell",
+    "proc.spawn",
+)
+
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="writ.evals")
-    parser.add_argument("--planner", default="scripted", choices=["scripted", "claude"])
+    parser.add_argument("--planner", default="scripted", choices=["scripted", "claude", "local"])
+    parser.add_argument(
+        "--base-url",
+        default="http://localhost:11434/v1",
+        help="OpenAI-compatible endpoint for --planner local",
+    )
     parser.add_argument("--model", default="claude-opus-5")
     parser.add_argument("--json", type=Path, help="write the full report here")
     parser.add_argument("--baseline", type=Path, help="compare against a previous run")
@@ -36,7 +57,10 @@ def main(argv: list[str] | None = None) -> int:
         print(f"no tasks match {args.only!r}", file=sys.stderr)
         return 2
 
-    if args.planner == "claude":
+    if args.planner == "local":
+        factory = _local_factory(args.base_url, args.model)
+        name, model = "local", args.model
+    elif args.planner == "claude":
         factory = _claude_factory(args.model)
         name, model = "claude", args.model
     else:
@@ -67,27 +91,23 @@ def main(argv: list[str] | None = None) -> int:
     return exit_code
 
 
+def _local_factory(base_url: str, model: str) -> PlannerFactory:
+    """Point the suite at a local model and get your own number."""
+    from ..planner.local import LocalPlanner
+
+    resolved = "qwen3:8b" if model == "claude-opus-5" else model
+
+    def factory(task: Task, workspace: Path) -> Planner:
+        return LocalPlanner(operations=_OPERATIONS, base_url=base_url, model=resolved)
+
+    return factory
+
+
 def _claude_factory(model: str) -> PlannerFactory:
     from ..planner.claude import ClaudePlanner
 
-    operations = (
-        "fs.read",
-        "fs.list",
-        "fs.stat",
-        "fs.write",
-        "fs.copy",
-        "fs.move",
-        "fs.delete",
-        "sheet.list",
-        "sheet.read_cell",
-        "sheet.read_range",
-        "sheet.find_row",
-        "sheet.set_cell",
-        "proc.spawn",
-    )
-
     def factory(task: Task, workspace: Path) -> Planner:
-        return ClaudePlanner(operations=operations, model=model)
+        return ClaudePlanner(operations=_OPERATIONS, model=model)
 
     return factory
 

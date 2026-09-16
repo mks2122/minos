@@ -67,6 +67,29 @@ uv run writ run "set Q3 revenue to 48200" -w ./data --allow-write
 `--yes`, irreversible actions prompt. **`--yes` auto-approves those too**, which is
 why it prints a warning.
 
+### Local models
+
+The planner is swappable, and a local one ships. Any OpenAI-compatible endpoint
+works -- Ollama, LM Studio, llama.cpp's server, vLLM:
+
+```bash
+ollama serve
+uv run writ run "set Q3 revenue to 48200" -w ./data --allow-write   --planner local --model qwen3:8b
+
+uv run writ eval --planner local --model qwen3:8b   # measure it yourself
+```
+
+**Expect it to do badly at planning, and do not take my word for it -- measure.**
+On OSWorld the strongest open-weight model is 235B-class (~66.7%); a 32B that fits
+a 24GB card scores ~5.9%. Grounding and planning are different problems and local
+models are good at one of them. The eval suite exists precisely so you can get your
+own number instead of trusting anyone's.
+
+The real local story is not a smaller model doing the same thinking badly. It is
+**not doing the thinking twice**: once a task is promoted to a verified skill,
+replay makes *zero* model calls -- local or remote -- and is faster and more
+reliable than either.
+
 ### What `writ demo` shows
 
 Dry-run the edit, apply it for real, roll it back byte-identical, then watch an
@@ -171,7 +194,7 @@ See [EVALUATION.md](EVALUATION.md), including the list of what is not measured.
 
 ```bash
 uv sync --all-extras
-uv run pytest          # 288 passing
+uv run pytest          # 297 passing
 uv run ruff check src tests examples
 uv run mypy            # strict
 ```
