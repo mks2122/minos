@@ -20,7 +20,13 @@ from typing import Any
 
 from .checkpoint import file_digest
 
-__all__ = ["FileHashOracle", "FileTreeOracle", "NullOracle", "compare"]
+__all__ = [
+    "FileHashOracle",
+    "FileTreeOracle",
+    "NullOracle",
+    "PathExistsOracle",
+    "compare",
+]
 
 
 @dataclass(slots=True)
@@ -78,6 +84,34 @@ class FileTreeOracle:
         a: dict[str, Any] = after.get("_files", {})
         changed = {p for p in b.keys() | a.keys() if b.get(p) != a.get(p)}
         return sorted(changed - declared)
+
+
+@dataclass(slots=True)
+class PathExistsOracle:
+    """Existence and kind, for paths whose contents are not a hash.
+
+    Directories are the motivating case: ``FileHashOracle`` reports ``None`` for
+    a directory whether it exists or not, which would make ``mkdir`` look like a
+    no-op.
+    """
+
+    paths: tuple[Path, ...]
+    kind: str = field(default="path_exists", init=False)
+
+    def observe(self) -> dict[str, Any]:
+        out: dict[str, Any] = {}
+        for raw in self.paths:
+            path = Path(raw).expanduser().resolve()
+            if path.is_dir():
+                out[str(path)] = "dir"
+            elif path.exists():
+                out[str(path)] = "file"
+            else:
+                out[str(path)] = None
+        return out
+
+    def verifiable(self) -> bool:
+        return True
 
 
 @dataclass(slots=True)

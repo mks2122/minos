@@ -6,9 +6,9 @@ A desktop agent runtime where every action — a syscall, a typed spreadsheet wr
 synthetic click — passes through one capability-scoped policy broker, with declared
 effects, full provenance, and a rollback you can actually trust.
 
-**Status: pre-alpha.** The broker, scopes, checkpointing, oracles and audit log work and
-are tested. There are no tiers, no planner and no agent yet. Do not point this at data you
-cannot afford to lose.
+**Status: pre-alpha.** The broker, capability scopes, checkpointing, oracles, audit log,
+tier router and L1 filesystem/process adapters work and are tested. There is no planner and
+no agent yet. Do not point this at data you cannot afford to lose.
 
 **Platforms:** Windows and Linux (Tier 1), macOS (Tier 2 — CI-green, not hand-verified).
 Runs natively. Not in WSL2.
@@ -79,7 +79,13 @@ verified and reversed by exactly the same machinery as an L1 `unlink()`. No tier
 fast path.
 
 **I3 — Degradation is auditable.** When the router falls back from a typed tool to
-pixels, it records why. Fallback rate is a published metric, not a silent decay.
+pixels, it records why — which adapters were tried, what was missing, what was unavailable
+on this platform. Fallback rate is a published metric, not a silent decay.
+
+```python
+router.stats.summary()
+# {'total': 12, 'L1': 11, 'L2': 1, 'L3': 0, 'fallback_rate': 0.0833, 'gui_rate': 0.0}
+```
 
 ---
 
@@ -103,13 +109,21 @@ needs no filesystem snapshots and behaves identically on all three platforms. Un
 writes are detected and halt the task with `reconciliation_required` rather than being
 reported as a clean rollback.
 
+Two classifications in the L1 adapters are worth arguing about, and both are deliberate.
+`fs.delete` is **REVERSIBLE** — the checkpoint holds the bytes, so restoring genuinely
+brings the file back, and calling it irreversible would be theatre. `proc.spawn` is
+**IRREVERSIBLE** and always prompts — once control passes to an external binary the runtime
+has no model of what it did, and no oracle can read that back. Getting routine work out of
+the prompt loop means writing a typed L2 adapter, which is exactly the incentive the tier
+hierarchy is meant to create.
+
 ---
 
 ## Development
 
 ```bash
 uv sync --all-extras
-uv run pytest          # 66 passing
+uv run pytest          # 94 passing
 uv run ruff check src tests examples
 uv run mypy            # strict
 ```

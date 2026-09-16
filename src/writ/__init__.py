@@ -15,14 +15,19 @@ from __future__ import annotations
 
 from .audit import AuditLog
 from .broker import Broker, cli_approver
+from .capabilities import capability_for, known_operations
 from .checkpoint import FileCheckpointStore
-from .oracles import FileHashOracle, FileTreeOracle, NullOracle
+from .oracles import FileHashOracle, FileTreeOracle, NullOracle, PathExistsOracle
+from .router import NoAdapter, Routed, Router, RoutingStats
 from .scopes import Scope, ScopeSet, ScopeViolation
+from .tiers.base import CapabilityManifest, OperationUnsupported, Preparation
+from .tiers.l1_system import FilesystemAdapter, ProcessAdapter
 from .types import (
     ActionRequest,
     AdmissionDecision,
     EffectClass,
     EffectContract,
+    Grant,
     Invocation,
     Outcome,
     Tier,
@@ -35,18 +40,31 @@ __all__ = [
     "AdmissionDecision",
     "AuditLog",
     "Broker",
+    "CapabilityManifest",
     "EffectClass",
     "EffectContract",
     "FileCheckpointStore",
     "FileHashOracle",
     "FileTreeOracle",
+    "FilesystemAdapter",
+    "Grant",
     "Invocation",
+    "NoAdapter",
     "NullOracle",
+    "OperationUnsupported",
     "Outcome",
+    "PathExistsOracle",
+    "Preparation",
+    "ProcessAdapter",
+    "Routed",
+    "Router",
+    "RoutingStats",
     "Scope",
     "ScopeSet",
     "ScopeViolation",
     "Tier",
     "__version__",
+    "capability_for",
     "cli_approver",
+    "known_operations",
 ]
