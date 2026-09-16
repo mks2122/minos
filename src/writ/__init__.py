@@ -22,6 +22,7 @@ from .router import NoAdapter, Routed, Router, RoutingStats
 from .scopes import Scope, ScopeSet, ScopeViolation
 from .tiers.base import CapabilityManifest, OperationUnsupported, Preparation
 from .tiers.l1_system import FilesystemAdapter, ProcessAdapter
+from .tiers.l2_adapters import TabularAdapter
 from .types import (
     ActionRequest,
     AdmissionDecision,
@@ -62,6 +63,7 @@ __all__ = [
     "Scope",
     "ScopeSet",
     "ScopeViolation",
+    "TabularAdapter",
     "Tier",
     "__version__",
     "capability_for",
