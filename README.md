@@ -35,12 +35,39 @@ its compromise survivable — it cannot do anything it was not already scoped to
 
 ---
 
-## Try it
+## Run it
 
 ```bash
-uv sync
-uv run python examples/dry_run_then_rollback.py
+uv sync --all-extras
+uv run writ --help
 ```
+
+Everything except `writ run` works with no API key and no network:
+
+| | |
+|---|---|
+| `writ demo` | dry-run -> execute -> byte-identical rollback -> a refused request |
+| `writ eval` | the 15-task suite, with the honesty metrics |
+| `writ index ./data` | build the memory index |
+| `writ recall "the excel from yesterday"` | resolve a vague reference, with reasons |
+| `writ audit .writ/audit.jsonl` | verify the hash chain |
+| `writ skills` | list stored skills |
+
+To actually drive an agent you need a model:
+
+```bash
+export ANTHROPIC_API_KEY=sk-ant-...        # or: ant auth login
+
+# read-only by default -- granting write is a thing you type
+uv run writ run "set Q3 revenue to 48200" -w ./data --allow-write --dry-run
+uv run writ run "set Q3 revenue to 48200" -w ./data --allow-write
+```
+
+`--dry-run` shows the diff of what *would* happen and changes nothing. Without
+`--yes`, irreversible actions prompt. **`--yes` auto-approves those too**, which is
+why it prints a warning.
+
+### What `writ demo` shows
 
 Dry-run the edit, apply it for real, roll it back byte-identical, then watch an
 out-of-scope request get refused before the executor is ever called:
@@ -144,7 +171,7 @@ See [EVALUATION.md](EVALUATION.md), including the list of what is not measured.
 
 ```bash
 uv sync --all-extras
-uv run pytest          # 269 passing
+uv run pytest          # 288 passing
 uv run ruff check src tests examples
 uv run mypy            # strict
 ```

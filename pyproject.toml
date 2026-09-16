@@ -30,6 +30,9 @@ dev = [
     "mypy>=1.11",
 ]
 
+[project.scripts]
+writ = "writ.__main__:main"
+
 [project.urls]
 Homepage = "https://github.com/OWNER/writ"
 
