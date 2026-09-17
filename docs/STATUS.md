@@ -22,7 +22,7 @@ Written so nobody has to guess which parts are real.
 | **Offline** | `writ doctor` checks readiness; `--offline` refuses to call a remote model |
 | **Agent loop** | Step budget, halt on `reconciliation_required`, abandon on repeated denial |
 | **Eval** | 15 tasks, binary, seeded, 6 REFUSE tasks, regression detection, CI-enforced |
-| **Memory** | File index, provenance, FTS, deictic resolution with explanations |
+| **Memory** | File index, provenance, FTS, deictic resolution with explanations -- **wired into the agent** as scope-gated `memory.recall` / `memory.recent` tools |
 | **Skills** | Promotion with refusals, scoped replay, drift detection, agentskills-compatible storage |
 
 ## Stubbed or absent

@@ -12,6 +12,7 @@ Grammar::
     fs.read:~/Invoices/**
     fs.write:~/Invoices/2026/**
     proc.spawn:/usr/bin/soffice
+    memory.read:~/Invoices/**
     net.http:api.example.com:443
     ui.input:window.class=soffice.bin
     clipboard.read:*
@@ -31,7 +32,7 @@ from pathlib import Path, PurePath
 
 __all__ = ["Scope", "ScopeSet", "ScopeViolation"]
 
-_PATH_CAPABILITIES = frozenset({"fs.read", "fs.write", "fs.delete", "proc.spawn"})
+_PATH_CAPABILITIES = frozenset({"fs.read", "fs.write", "fs.delete", "proc.spawn", "memory.read"})
 
 KNOWN_CAPABILITIES = frozenset(
     {
@@ -43,6 +44,7 @@ KNOWN_CAPABILITIES = frozenset(
         "ui.input",
         "clipboard.read",
         "clipboard.write",
+        "memory.read",
     }
 )
 

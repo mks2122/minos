@@ -47,9 +47,10 @@ def cmd_run(args: argparse.Namespace) -> int:
     from .audit import AuditLog
     from .broker import Broker, cli_approver
     from .checkpoint import FileCheckpointStore
+    from .memory import MemoryStore
     from .router import Router
     from .scopes import ScopeSet
-    from .tiers.l1_system import FilesystemAdapter, ProcessAdapter
+    from .tiers.l1_system import FilesystemAdapter, MemoryAdapter, ProcessAdapter
     from .tiers.l2_adapters import TabularAdapter
 
     workspace = Path(args.workspace).expanduser().resolve()
@@ -57,7 +58,7 @@ def cmd_run(args: argparse.Namespace) -> int:
         print(f"error: {workspace} is not a directory", file=sys.stderr)
         return 2
 
-    scopes = [f"fs.read:{workspace}/**"]
+    scopes = [f"fs.read:{workspace}/**", f"memory.read:{workspace}/**"]
     if args.allow_write:
         scopes.append(f"fs.write:{workspace}/**")
     if args.allow_delete:
@@ -77,7 +78,16 @@ def cmd_run(args: argparse.Namespace) -> int:
         "sheet.read_range",
         "sheet.find_row",
         "sheet.set_cell",
+        "memory.recall",
+        "memory.recent",
     )
+
+    # Index the workspace so "the excel from yesterday" has something to
+    # resolve against. Scoped to the workspace, so memory never learns about
+    # files this task could not have listed anyway.
+    memory = MemoryStore(state / "memory.db")
+    memory.index_tree(workspace)
+    memory.start_session("cli", args.goal)
 
     try:
         planner = _planner(args, operations)
@@ -94,7 +104,14 @@ def cmd_run(args: argparse.Namespace) -> int:
     )
     agent = Agent(
         planner=planner,
-        router=Router(adapters=(FilesystemAdapter(), ProcessAdapter(), TabularAdapter())),
+        router=Router(
+            adapters=(
+                FilesystemAdapter(),
+                MemoryAdapter(memory, roots=(workspace,)),
+                ProcessAdapter(),
+                TabularAdapter(),
+            )
+        ),
         broker=broker,
         limits=AgentLimits(max_steps=args.max_steps),
     )
@@ -137,14 +154,12 @@ def cmd_run(args: argparse.Namespace) -> int:
         print(f"  {finished.summary}")
     print(f"\n  audit: {broker.audit.path}  ({broker.audit.count} entries)")
 
-    if args.remember:
-        from .memory import MemoryStore
-
-        with MemoryStore(state / "memory.db") as memory:
-            memory.start_session("cli", args.goal)
-            for outcome in trajectory.outcomes:
-                memory.record_outcome(outcome, session_id="cli", goal=args.goal)
-        print(f"  memory: {state / 'memory.db'}")
+    # Record what this run touched, so the next one can resolve "yesterday's".
+    for outcome in trajectory.outcomes:
+        memory.record_outcome(outcome, session_id="cli", goal=args.goal)
+    memory.end_session("cli")
+    memory.close()
+    print(f"  memory: {state / 'memory.db'}")
 
     return 0 if trajectory.succeeded else 1
 
@@ -372,7 +387,6 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="refuse to use a remote model; fail instead of reaching the network",
     )
-    run.add_argument("--remember", action="store_true", help="record to the memory index")
     run.add_argument("--state", default=str(DEFAULT_STATE))
     run.set_defaults(func=cmd_run)
 

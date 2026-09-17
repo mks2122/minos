@@ -111,6 +111,23 @@ _SCHEMAS: dict[str, dict[str, Any]] = {
         {"path": _PATH, "sheet": _SHEET, "cell": _CELL, "value": {"type": "string"}},
         ["path", "cell", "value"],
     ),
+    "memory.recall": _tool(
+        "memory_recall",
+        (
+            "Resolve a vague reference to a real path -- 'the excel from "
+            "yesterday', 'the budget spreadsheet'. Returns the path, whether it "
+            "is confident, and why. Use this instead of guessing a filename. "
+            "If confident is false, ask the user rather than picking."
+        ),
+        {"phrase": {"type": "string", "description": "What the user called it."}},
+        ["phrase"],
+    ),
+    "memory.recent": _tool(
+        "memory_recent",
+        "List files this runtime recently changed, most recent first.",
+        {"limit": {"type": "integer", "description": "Max results. Default 10."}},
+        [],
+    ),
     "proc.spawn": _tool(
         "proc_spawn",
         (

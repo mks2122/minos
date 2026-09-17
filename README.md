@@ -156,6 +156,35 @@ out-of-scope request get refused before the executor is ever called:
 
 ---
 
+### Memory
+
+The agent can ask *which file did you mean*:
+
+```
+  ok    [L1] memory.recall     "the spreadsheet"
+  ok    [L1] fs.read
+  SUCCEEDED -- Q3 revenue is 41800
+```
+
+`memory.recall` resolves a vague reference to a real path **and explains how it
+decided**, because an unexplained resolution is an unauditable one:
+
+```
+Resolved 'the spreadsheet' to:
+  data\sales_2025.csv
+Because:
+  - .csv matches the kind of file you named (spreadsheet)
+  - this runtime read it during the task 'tell me the Q3 revenue' (fs.read)
+```
+
+That second reason is provenance, not an mtime -- the broker records every
+admitted action, so memory knows *which task* touched a file and why.
+
+Recall is scope-gated under its own `memory.read` capability and only returns
+paths beneath the workspace: a listing you could not have obtained is a leak even
+if you cannot open what it names. And what it returns is a suggestion, never an
+authority -- the path still has to pass the broker before anything happens to it.
+
 ## The three invariants
 
 **I1 — The planner never executes.** It emits `ActionRequest` objects and has no
