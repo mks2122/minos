@@ -65,6 +65,35 @@ When an action touches something it did not declare, `FileTreeOracle` detects it
 
 This behaviour is load-bearing and is covered by a test. An earlier revision got it wrong — the restore succeeded, `verify()` passed (both only examine declared targets), and the broker reported "reversed cleanly" while the collateral file was still on disk. That is exactly the lie this component exists to prevent.
 
+### Verification confirms the declared effect, not the intent
+
+This is the most important limit in the design, and it was found by running a
+local 8B model against a real task rather than by reasoning about it.
+
+Asked to *"set the Q3 revenue to 48200"*, the planner emitted
+`sheet.set_cell(cell="B3", value="48200")`. B3 is Q2's row -- row 1 is the
+header, so Q3 is B4. The broker admitted it (in scope), checkpointed it,
+executed it, read the cell back, found `B3 == "48200"` exactly as the contract
+declared, and reported **success**.
+
+Every component behaved correctly. The oracle verified what was *declared*. It
+has no access to what was *meant*.
+
+So effect verification protects against:
+
+- an action that silently did nothing
+- an action that did something other than it declared
+- an action that touched files it did not declare
+
+It does **not** protect against a planner that declares the wrong thing
+confidently. The defences that apply there are different ones: scopes bound the
+blast radius, `--dry-run` shows the diff before it happens, checkpoints make it
+reversible, and the audit log records exactly what was asked for. None of them
+make the agent correct; they make its mistakes survivable and visible.
+
+Treat "the runtime said SUCCEEDED" as "the declared effect happened", never as
+"the task was done right".
+
 ### Audit log anchoring
 
 The chain is tamper-**evident**, not tamper-proof. Detecting a full-file rewrite requires anchoring the head hash somewhere the agent cannot write. Out of scope for v0; tracked.
