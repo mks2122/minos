@@ -170,7 +170,7 @@ def _installed_models(base_url: str) -> list[str]:
 
 
 def _find_runner() -> str:
-    """Locate a local runner.
+    r"""Locate a local runner.
 
     PATH alone is not enough: a Windows installer drops Ollama in
     %LOCALAPPDATA%\Programs and an already-open shell will not have picked it
