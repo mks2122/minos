@@ -98,6 +98,25 @@ Then add a reference solution in `reference_script`, or CI will fail with "tasks
 
 ---
 
+## Why binary task checks, not trajectory checks
+
+A run can be internally consistent and still wrong. Observed with a local 8B:
+asked to set Q3 revenue, it wrote to the Q2 row, declared that it was doing so,
+and the runtime verified the declared effect and reported success -- correctly,
+since the oracle confirms what was declared, not what was meant.
+
+Nothing inside the trajectory catches that. Only a check against the *final
+workspace* does, which is why every task's `check` inspects the files rather
+than the steps:
+
+```python
+check=lambda ws, t: _rows(ws)[3] == ["Q3", "48200", "455"]
+```
+
+`write.set_cell_precision` goes further and asserts every other row is
+untouched, which distinguishes a cell edit from a file rewrite -- and catches a
+planner that wrote the right value into the wrong place.
+
 ## What is not measured yet
 
 Stated so nobody mistakes the suite for more than it is:
