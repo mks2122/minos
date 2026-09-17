@@ -60,7 +60,10 @@ class Report:
 
     def blockers(self) -> list[str]:
         problems: list[str] = []
-        if not self.runner:
+        # A responding server settles the question. Reporting "no runner found"
+        # while one is demonstrably serving is how a working setup gets
+        # mistaken for a broken one.
+        if not self.runner and not self.server_up:
             problems.append(
                 "No local runner found. Install Ollama (https://ollama.com), or "
                 "llama.cpp's llama-server -- anything speaking OpenAI-compatible "
@@ -160,8 +163,37 @@ def _installed_models(base_url: str) -> list[str]:
             data = json.loads(response.read())
     except (urllib.error.URLError, TimeoutError, OSError, ValueError):
         return []
-    entries = data.get("data", []) if isinstance(data, dict) else []
+    # `.get(key, default)` returns a stored None rather than the default, and
+    # Ollama sends {"data": null} when it has no models pulled yet.
+    entries = (data.get("data") or []) if isinstance(data, dict) else []
     return sorted(str(m.get("id", "")) for m in entries if isinstance(m, dict) and m.get("id"))
+
+
+def _find_runner() -> str:
+    """Locate a local runner.
+
+    PATH alone is not enough: a Windows installer drops Ollama in
+    %LOCALAPPDATA%\Programs and an already-open shell will not have picked it
+    up, so a freshly installed and actively serving runner looks absent.
+    """
+    for runner in ("ollama", "llama-server", "lms"):
+        if shutil.which(runner):
+            return runner
+
+    candidates = [
+        Path(os.environ.get("LOCALAPPDATA", "")) / "Programs" / "Ollama" / "ollama.exe",
+        Path(os.environ.get("PROGRAMFILES", "")) / "Ollama" / "ollama.exe",
+        Path("/usr/local/bin/ollama"),
+        Path("/opt/homebrew/bin/ollama"),
+        Path.home() / ".local" / "bin" / "ollama",
+    ]
+    for candidate in candidates:
+        try:
+            if candidate.is_file():
+                return "ollama"
+        except OSError:
+            continue
+    return ""
 
 
 def diagnose(base_url: str = DEFAULT_URL) -> Report:
@@ -173,10 +205,7 @@ def diagnose(base_url: str = DEFAULT_URL) -> Report:
     with contextlib.suppress(OSError):
         report.free_disk_gb = round(shutil.disk_usage(Path.cwd()).free / 1024**3, 1)
 
-    for runner in ("ollama", "llama-server", "lms"):
-        if shutil.which(runner):
-            report.runner = runner
-            break
+    report.runner = _find_runner()
 
     report.server_up = server_available(base_url)
     if report.server_up:

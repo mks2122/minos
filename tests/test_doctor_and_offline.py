@@ -176,3 +176,52 @@ def test_without_offline_the_fallback_is_allowed(monkeypatch):
         _planner(args, ("fs.read",))
     except ImportError as exc:
         assert "offline" not in str(exc)
+
+
+def test_a_server_with_no_models_does_not_crash(monkeypatch):
+    """Ollama sends {"data": null} before anything is pulled.
+
+    `.get(key, default)` returns the stored None, not the default -- found by
+    pointing the doctor at a freshly installed server.
+    """
+    import writ.doctor as doctor_module
+
+    class _Response:
+        status = 200
+
+        def read(self) -> bytes:
+            return b'{"object": "list", "data": null}'
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+    monkeypatch.setattr(doctor_module.urllib.request, "urlopen", lambda *a, **k: _Response())
+    assert doctor_module._installed_models("http://localhost:11434/v1") == []
+
+
+def test_a_serving_runtime_is_not_reported_as_missing():
+    """A responding server settles it. Found on a freshly installed machine:
+    Ollama lands outside an already-open shell's PATH, so `which` fails while
+    the service is demonstrably answering."""
+    blockers = Report(runner="", server_up=True, installed_models=["qwen3:8b"]).blockers()
+    assert not any("No local runner found" in b for b in blockers)
+
+
+def test_a_missing_runner_is_still_reported_when_nothing_serves():
+    blockers = Report(runner="", server_up=False).blockers()
+    assert any("No local runner found" in b for b in blockers)
+
+
+def test_runner_is_found_outside_path(monkeypatch, tmp_path):
+    import writ.doctor as doctor_module
+
+    programs = tmp_path / "Programs" / "Ollama"
+    programs.mkdir(parents=True)
+    (programs / "ollama.exe").write_text("", encoding="utf-8")
+
+    monkeypatch.setattr(doctor_module.shutil, "which", lambda _name: None)
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    assert doctor_module._find_runner() == "ollama"
