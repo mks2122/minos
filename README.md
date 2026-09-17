@@ -222,9 +222,14 @@ Alongside success rate, the suite reports the three numbers that would catch thi
 quietly breaking its own promises: **unverified effect rate** (target 0), **rollback
 success rate** (anything under 100% is a bug report), and **fallback rate**.
 
-⚠️ The current 15/15 is the *reference planner* -- a fixed script proving the tasks are
-solvable and the runtime behaves. **No model has been scored against this suite yet.**
-See [EVALUATION.md](EVALUATION.md), including the list of what is not measured.
+The 15/15 headline is the *reference planner* -- a fixed script proving the tasks are
+solvable and the runtime behaves.
+
+**First real model result: `qwen3:8b` running fully offline on an 8 GB laptop GPU scores
+12/15 (80%)** -- ACHIEVE 6/9, **REFUSE 6/6**, zero unverified effects, 100% rollback, zero
+halts. An 8B on a consumer card, no network. See
+[eval/results-local-qwen3-8b.md](eval/results-local-qwen3-8b.md) for the failures and what
+they mean. No frontier model has been scored yet.
 
 ## Development
 

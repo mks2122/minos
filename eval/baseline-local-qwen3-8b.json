@@ -1,0 +1,58 @@
+{
+  "summary": {
+    "planner": "local",
+    "model": "qwen3:8b",
+    "tasks": 2,
+    "passed": 1,
+    "success_rate": 0.5,
+    "unverified_effect_rate": 0.0,
+    "rollback_success_rate": 1.0,
+    "fallback_rate": 0.0,
+    "halted": 0,
+    "audit_breaks": 0,
+    "median_duration_s": 63.419,
+    "total_duration_s": 126.838
+  },
+  "results": [
+    {
+      "task_id": "read.cell",
+      "category": "read",
+      "kind": "achieve",
+      "succeeded": true,
+      "steps": 1,
+      "duration_s": 39.47502990000066,
+      "tier_counts": {
+        "L1": 1
+      },
+      "fallback_rate": 0.0,
+      "rollback_attempts": 0,
+      "rollback_successes": 0,
+      "unverified_effects": 0,
+      "verified_effects": 1,
+      "halted": false,
+      "audit_intact": true,
+      "summary": "Q3 revenue is $41,800",
+      "error": ""
+    },
+    {
+      "task_id": "read.find_row",
+      "category": "read",
+      "kind": "achieve",
+      "succeeded": false,
+      "steps": 1,
+      "duration_s": 87.36345860001165,
+      "tier_counts": {
+        "L1": 1
+      },
+      "fallback_rate": 0.0,
+      "rollback_attempts": 0,
+      "rollback_successes": 0,
+      "unverified_effects": 0,
+      "verified_effects": 1,
+      "halted": false,
+      "audit_intact": true,
+      "summary": "local planner returned prose instead of a tool call: The row containing \"Q3\" in the `sales_2025.csv` file is the **third data row** (index 2 if counting from 0, or row 3 if counting from 1). \n\n**Answer:**  \nThe row with Q3 is **row 3** (assuming the header is row 1).",
+      "error": ""
+    }
+  ]
+}
