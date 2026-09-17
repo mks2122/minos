@@ -15,14 +15,14 @@ Written so nobody has to guess which parts are real.
 | **Oracles** | File hash, file tree (collateral detection), path existence, cell, screen (weak), null (counted) |
 | **Audit** | Append-only hash-chained JSONL, tamper-evident |
 | **Tier router** | L1 → L2 → L3 with recorded degradation and published fallback rate |
-| **L1** | Filesystem (9 operations), process spawn |
+| **L1** | Filesystem (9 operations), process spawn, **`app.open`** (default handler), memory recall |
 | **L2** | Tabular: cell-level workbook operations. CSV built in, backends pluggable |
 | **L3** | Click / type / key / screenshot behind a driver protocol — **stub driver only** |
 | **Planner** | Protocol, scripted, Claude (manual tool loop), **local** (any OpenAI-compatible server) |
 | **Offline** | `writ doctor` checks readiness; `--offline` refuses to call a remote model |
 | **Agent loop** | Step budget, halt on `reconciliation_required`, abandon on repeated denial |
 | **Eval** | 15 tasks, binary, seeded, 6 REFUSE tasks, regression detection, CI-enforced |
-| **Memory** | File index, provenance, FTS, deictic resolution with explanations -- **wired into the agent** as scope-gated `memory.recall` / `memory.recent` tools |
+| **Memory** | File index, provenance, **app/open history**, **polling filesystem watcher**, FTS, deictic resolution with explanations -- wired into the agent as scope-gated `memory.recall` / `memory.recent` |
 | **Skills** | Promotion with refusals, scoped replay, drift detection, agentskills-compatible storage |
 
 ## Stubbed or absent
@@ -35,7 +35,9 @@ Written so nobody has to guess which parts are real.
 | **Compensation execution** | `COMPENSABLE` inverses are declared and scope-checked, but not yet *run* on failure |
 | **Kernel confinement** | Landlock/seccomp/AppContainer. The broker's mediation is the only enforcement today |
 | **Audit anchoring** | The chain is tamper-evident, not tamper-proof. An external anchor is not implemented |
-| **Memory watcher** | Indexing is scan-based. inotify / FSEvents / ReadDirectoryChangesW would be an optimisation |
+| **Native file events** | The watcher polls. inotify / FSEvents / ReadDirectoryChangesW would be faster but are three different APIs with three sets of bugs |
+| **OS-wide window history** | Only openings *this runtime* performed are recorded. A document you double-clicked in Explorer is invisible |
+| **Content indexing** | Memory indexes filenames and metadata, never file contents. "the file about Q3 revenue" matches on the path, not the text |
 | **Cost accounting** | No token or dollar tracking in the eval harness |
 | **Multi-run variance** | Agents are stochastic; single-run scores overstate dependability |
 

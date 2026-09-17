@@ -21,6 +21,7 @@ is a different data model.
 from __future__ import annotations
 
 import sqlite3
+import threading
 import time
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
@@ -28,7 +29,7 @@ from pathlib import Path
 
 from ..types import Outcome
 
-__all__ = ["FileRecord", "MemoryStore", "Touch"]
+__all__ = ["FileRecord", "MemoryStore", "Opening", "Touch"]
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS files (
@@ -62,6 +63,21 @@ CREATE TABLE IF NOT EXISTS touches (
     status       TEXT NOT NULL
 );
 
+-- What was opened, in what, and when. ARCHITECTURE.md promised app/window
+-- history and this is the honest subset: openings this runtime performed. A
+-- document opened by double-clicking in Explorer is not here, and cannot be
+-- without OS-level window enumeration.
+CREATE TABLE IF NOT EXISTS opens (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    path       TEXT NOT NULL,
+    handler    TEXT NOT NULL,
+    ts         REAL NOT NULL,
+    session_id TEXT,
+    goal       TEXT
+);
+
+CREATE INDEX IF NOT EXISTS opens_path ON opens(path);
+CREATE INDEX IF NOT EXISTS opens_ts   ON opens(ts);
 CREATE INDEX IF NOT EXISTS touches_path ON touches(path);
 CREATE INDEX IF NOT EXISTS touches_ts   ON touches(ts);
 CREATE INDEX IF NOT EXISTS files_mtime  ON files(mtime);
@@ -105,18 +121,54 @@ class Touch:
         return self.effect_class in MUTATING
 
 
+@dataclass(frozen=True, slots=True)
+class Opening:
+    """A file this runtime handed to an application."""
+
+    path: str
+    handler: str
+    ts: float
+    session_id: str | None
+    goal: str | None
+
+
 class MemoryStore:
     def __init__(self, path: Path | str = ":memory:") -> None:
         self.path = str(path)
         if self.path != ":memory:":
             Path(self.path).parent.mkdir(parents=True, exist_ok=True)
-        self.db = sqlite3.connect(self.path)
+        # check_same_thread=False because FileWatcher records from its own
+        # thread. sqlite3 connections are thread-bound by default and raise
+        # ProgrammingError otherwise -- which, inside a watcher loop that
+        # catches broadly, looks exactly like a watcher that works and silently
+        # records nothing. The lock is what makes relaxing that safe.
+        self._lock = threading.RLock()
+        self.db = sqlite3.connect(self.path, check_same_thread=False)
         self.db.row_factory = sqlite3.Row
-        self.db.executescript(_SCHEMA)
-        self.db.commit()
+        with self._lock:
+            self.db.executescript(_SCHEMA)
+            self.db.commit()
+
+    # -- thread-safe access ------------------------------------------------
+
+    def _query(self, sql: str, params: Sequence[object] = ()) -> list[sqlite3.Row]:
+        """Read, fetching inside the lock so no cursor crosses a thread."""
+        with self._lock:
+            return self.db.execute(sql, tuple(params)).fetchall()
+
+    def _write(self, sql: str, params: Sequence[object] = (), *, commit: bool = True) -> None:
+        with self._lock:
+            self.db.execute(sql, tuple(params))
+            if commit:
+                self.db.commit()
+
+    def _commit(self) -> None:
+        with self._lock:
+            self.db.commit()
 
     def close(self) -> None:
-        self.db.close()
+        with self._lock:
+            self.db.close()
 
     def __enter__(self) -> MemoryStore:
         return self
@@ -147,7 +199,7 @@ class MemoryStore:
                 break
             self.record_file(path, now=now)
             count += 1
-        self.db.commit()
+        self._commit()
         return count
 
     def record_file(self, path: Path | str, *, now: float | None = None) -> None:
@@ -159,7 +211,7 @@ class MemoryStore:
         except OSError:
             size, mtime, exists = 0, 0.0, 0
 
-        self.db.execute(
+        self._write(
             """
             INSERT INTO files (path, name, suffix, size, mtime,
                                first_seen, last_seen, exists_now)
@@ -181,8 +233,8 @@ class MemoryStore:
                 exists,
             ),
         )
-        self.db.execute("DELETE FROM files_fts WHERE path = ?", (str(resolved),))
-        self.db.execute(
+        self._write("DELETE FROM files_fts WHERE path = ?", (str(resolved),), commit=False)
+        self._write(
             "INSERT INTO files_fts (path, name) VALUES (?, ?)",
             (str(resolved), _searchable(resolved)),
         )
@@ -190,15 +242,13 @@ class MemoryStore:
     # -- provenance --------------------------------------------------------
 
     def start_session(self, session_id: str, goal: str) -> None:
-        self.db.execute(
+        self._write(
             "INSERT OR REPLACE INTO sessions (id, goal, started) VALUES (?, ?, ?)",
             (session_id, goal, time.time()),
         )
-        self.db.commit()
 
     def end_session(self, session_id: str) -> None:
-        self.db.execute("UPDATE sessions SET ended = ? WHERE id = ?", (time.time(), session_id))
-        self.db.commit()
+        self._write("UPDATE sessions SET ended = ? WHERE id = ?", (time.time(), session_id))
 
     def record_outcome(
         self, outcome: Outcome, *, session_id: str | None = None, goal: str | None = None
@@ -217,7 +267,7 @@ class MemoryStore:
         for target in targets:
             resolved = Path(target).expanduser().resolve()
             self.record_file(resolved, now=now)
-            self.db.execute(
+            self._write(
                 """
                 INSERT INTO touches (path, ts, session_id, goal, operation,
                                      adapter, tier, effect_class, status)
@@ -235,7 +285,51 @@ class MemoryStore:
                     outcome.status,
                 ),
             )
-        self.db.commit()
+
+    def record_open(
+        self,
+        path: Path | str,
+        handler: str,
+        *,
+        session_id: str | None = None,
+        goal: str | None = None,
+    ) -> None:
+        """Note that a file was opened in an application.
+
+        This is what makes "the thing I had open" answerable for anything this
+        runtime opened. It is deliberately not inferred from a touch: reading a
+        file and opening it in a viewer are different events and conflating
+        them would make the history lie.
+        """
+        resolved = Path(path).expanduser().resolve()
+        self.record_file(resolved)
+        self._write(
+            "INSERT INTO opens (path, handler, ts, session_id, goal) VALUES (?, ?, ?, ?, ?)",
+            (str(resolved), handler, time.time(), session_id, goal),
+        )
+
+    def openings(self, *, since: float | None = None, limit: int = 50) -> list[Opening]:
+        sql = "SELECT * FROM opens WHERE 1=1"
+        params: list[object] = []
+        if since is not None:
+            sql += " AND ts >= ?"
+            params.append(since)
+        sql += " ORDER BY ts DESC LIMIT ?"
+        params.append(limit)
+        return [
+            Opening(
+                path=row["path"],
+                handler=row["handler"],
+                ts=row["ts"],
+                session_id=row["session_id"],
+                goal=row["goal"],
+            )
+            for row in self._query(sql, params)
+        ]
+
+    def last_opened(self) -> Opening | None:
+        found = self.openings(limit=1)
+        return found[0] if found else None
 
     # -- queries -----------------------------------------------------------
 
@@ -247,7 +341,7 @@ class MemoryStore:
             sql += f" AND suffix IN ({placeholders})"
             params.extend(s.lower() for s in suffixes)
         sql += " ORDER BY mtime DESC"
-        return [_file_record(row) for row in self.db.execute(sql, params)]
+        return [_file_record(row) for row in self._query(sql, params)]
 
     def search(self, text: str, *, limit: int = 50) -> list[FileRecord]:
         """FTS over path and filename. Returns [] rather than raising on bad syntax."""
@@ -255,7 +349,7 @@ class MemoryStore:
         if not cleaned:
             return []
         try:
-            rows = self.db.execute(
+            rows = self._query(
                 """
                 SELECT f.* FROM files_fts
                 JOIN files f ON f.path = files_fts.path
@@ -263,7 +357,7 @@ class MemoryStore:
                 ORDER BY f.mtime DESC LIMIT ?
                 """,
                 (cleaned, limit),
-            ).fetchall()
+            )
         except sqlite3.OperationalError:
             return []
         return [_file_record(row) for row in rows]
@@ -278,7 +372,7 @@ class MemoryStore:
             sql += " AND ts >= ?"
             params.append(since)
         sql += " ORDER BY ts DESC"
-        return [_touch(row) for row in self.db.execute(sql, params)]
+        return [_touch(row) for row in self._query(sql, params)]
 
     def recently_touched(
         self, *, since: float | None = None, mutating_only: bool = False

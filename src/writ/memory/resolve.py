@@ -202,7 +202,15 @@ def resolve(
 
         if touch is not None:
             score += 2.0 if touch.mutating else 0.5
-            what = "changed" if touch.mutating else "read"
+            # app.open is REVERSIBLE (it is checkpointed in case the handler
+            # rewrites the file), but saying "changed it" for an open would be
+            # a lie in an explanation whose whole job is to be accurate.
+            if touch.operation == "app.open":
+                what = "opened"
+            elif touch.mutating:
+                what = "changed"
+            else:
+                what = "read"
             goal = f" during the task {touch.goal!r}" if touch.goal else ""
             reasons.append(f"this runtime {what} it{goal} ({touch.operation})")
 

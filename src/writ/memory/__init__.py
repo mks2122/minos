@@ -9,6 +9,18 @@ Memory content is untrusted. Resolution informs planning; it never widens scope.
 """
 
 from .resolve import Candidate, Resolution, resolve
-from .store import FileRecord, MemoryStore, Touch
+from .store import FileRecord, MemoryStore, Opening, Touch
+from .watch import Change, FileWatcher, scan
 
-__all__ = ["Candidate", "FileRecord", "MemoryStore", "Resolution", "Touch", "resolve"]
+__all__ = [
+    "Candidate",
+    "Change",
+    "FileRecord",
+    "FileWatcher",
+    "MemoryStore",
+    "Opening",
+    "Resolution",
+    "Touch",
+    "resolve",
+    "scan",
+]
