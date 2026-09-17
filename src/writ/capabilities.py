@@ -76,6 +76,8 @@ for _spec in (
     OperationSpec("sheet.read_range", "fs.read", "Read a rectangular range"),
     OperationSpec("sheet.find_row", "fs.read", "Find a row by column value"),
     OperationSpec("sheet.set_cell", "fs.write", "Write one cell"),
+    OperationSpec("memory.recall", "memory.read", "Resolve a vague reference to a real path"),
+    OperationSpec("memory.recent", "memory.read", "List recently changed files"),
     OperationSpec("proc.spawn", "proc.spawn", "Run an external program"),
     OperationSpec("net.http", "net.http", "Make an HTTP request"),
     OperationSpec("ui.click", "ui.input", "Synthetic mouse click"),
