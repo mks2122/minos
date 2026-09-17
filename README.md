@@ -77,12 +77,18 @@ uv run writ run "set Q3 revenue to 48200" -w ./data --allow-write
 `--yes`, irreversible actions prompt. **`--yes` auto-approves those too**, which is
 why it prints a warning.
 
-### Local models are a first-class path
+### Fully local
 
 ```bash
+uv run writ doctor                 # what's missing, sized to your GPU
 ollama pull qwen3:8b && ollama serve
 uv run python main.py              # auto-detects the server and uses it
 ```
+
+`--offline` (menu: Settings -> 9) makes it a **guarantee**: it fails rather than
+calling a remote model, so nothing can quietly leave the machine.
+
+Full guide: **[docs/LOCAL.md](docs/LOCAL.md)**.
 
 `--planner auto` (the default) prefers a local server whenever one is listening.
 
@@ -224,7 +230,7 @@ See [EVALUATION.md](EVALUATION.md), including the list of what is not measured.
 
 ```bash
 uv sync --all-extras
-uv run pytest          # 321 passing
+uv run pytest          # 343 passing
 uv run ruff check src tests examples
 uv run mypy            # strict
 ```
@@ -237,6 +243,7 @@ uv run mypy            # strict
 |---|---|
 | [ARCHITECTURE.md](ARCHITECTURE.md) | The invariants, the life of an action, trust boundaries, core types |
 | [EVALUATION.md](EVALUATION.md) | Method, metrics, current numbers, and what is *not* measured |
+| [docs/LOCAL.md](docs/LOCAL.md) | Running fully offline: models, sizing, and what not to bother with |
 | [docs/STATUS.md](docs/STATUS.md) | What is built, what is stubbed, what is missing |
 | [SECURITY.md](SECURITY.md) | Threat model — and what this does **not** protect against |
 | [docs/PLAN.md](docs/PLAN.md) | Milestones, build-vs-borrow, metrics |

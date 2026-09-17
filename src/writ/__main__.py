@@ -1,5 +1,6 @@
 """``writ`` -- the command line.
 
+    writ doctor                                 can this machine run fully offline?
     writ demo                                   see it work, no API key needed
     writ run "set Q3 revenue to 48200" -w ./data --allow-write
     writ eval                                   run the task suite
@@ -150,10 +151,26 @@ def cmd_run(args: argparse.Namespace) -> int:
 
 def _planner(args: argparse.Namespace, operations: tuple[str, ...]):  # type: ignore[no-untyped-def]
     choice = args.planner
+    offline = getattr(args, "offline", False)
+
+    if offline and choice == "claude":
+        raise ImportError(
+            "--offline was given but --planner claude would call a remote API. "
+            "Drop --offline, or start a local server (see: writ doctor)."
+        )
+
     if choice == "auto":
         from .planner.local import server_available
 
-        choice = "local" if server_available(args.base_url) else "claude"
+        if server_available(args.base_url):
+            choice = "local"
+        elif offline:
+            raise ImportError(
+                "--offline was given but no local server is reachable at "
+                f"{args.base_url}.\nRun `writ doctor` to see what is missing."
+            )
+        else:
+            choice = "claude"
         print(f"planner   : {choice} (auto-detected)")
 
     if choice == "local":
@@ -190,6 +207,17 @@ def cmd_demo(args: argparse.Namespace) -> int:
         return 2
     runpy.run_path(str(script), run_name="__main__")
     return 0
+
+
+# -- writ doctor -----------------------------------------------------------
+
+
+def cmd_doctor(args: argparse.Namespace) -> int:
+    from .doctor import diagnose, render
+
+    report = diagnose(args.base_url)
+    print(render(report))
+    return 0 if report.can_run_offline else 1
 
 
 # -- writ audit ------------------------------------------------------------
@@ -339,9 +367,18 @@ def build_parser() -> argparse.ArgumentParser:
         help="defaults to qwen3:8b for local, claude-opus-5 for claude",
     )
     run.add_argument("--max-steps", type=int, default=20)
+    run.add_argument(
+        "--offline",
+        action="store_true",
+        help="refuse to use a remote model; fail instead of reaching the network",
+    )
     run.add_argument("--remember", action="store_true", help="record to the memory index")
     run.add_argument("--state", default=str(DEFAULT_STATE))
     run.set_defaults(func=cmd_run)
+
+    doctor = sub.add_parser("doctor", help="can this machine run fully offline?")
+    doctor.add_argument("--base-url", default="http://localhost:11434/v1")
+    doctor.set_defaults(func=cmd_doctor)
 
     audit = sub.add_parser("audit", help="verify and print an audit chain")
     audit.add_argument("path", nargs="?", default=str(DEFAULT_STATE / "audit.jsonl"))
