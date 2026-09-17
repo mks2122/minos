@@ -10,11 +10,13 @@ uv run writ doctor      # what's missing, sized to your GPU
 
 ## Three commands
 
-```bash
-# 1. install a runner
-winget install Ollama.Ollama      # or https://ollama.com
+Verified on Windows 11 with an RTX 5060 Laptop (8 GB VRAM):
 
-# 2. pull a model that fits your card
+```bash
+# 1. install a runner -- the installer also starts the service
+winget install --id Ollama.Ollama --accept-package-agreements --accept-source-agreements
+
+# 2. pull a model that fits your card (~5 GB)
 ollama pull qwen3:8b
 
 # 3. run
@@ -22,6 +24,11 @@ uv run python main.py             # auto-detects the server and uses it
 ```
 
 `writ doctor` should now say **FULLY OFFLINE: YES**.
+
+> **If step 2 says `ollama` is not recognised**, the installer put it in
+> `%LOCALAPPDATA%\Programs\Ollama` and your open terminal has not picked that
+> up. Open a new terminal, or call it by full path. `writ doctor` looks in that
+> location itself, so it will still report the runner correctly.
 
 To make that a guarantee rather than a preference, turn on offline mode — Settings (8) → option 9, or `--offline` on the CLI. It then **fails rather than calling a remote model**, so there is no path where something quietly leaves the machine.
 

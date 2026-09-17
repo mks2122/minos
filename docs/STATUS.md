@@ -39,6 +39,18 @@ Written so nobody has to guess which parts are real.
 | **Cost accounting** | No token or dollar tracking in the eval harness |
 | **Multi-run variance** | Agents are stochastic; single-run scores overstate dependability |
 
+## Running fully offline
+
+Supported and verified on Windows 11 / RTX 5060 Laptop (8 GB VRAM):
+
+```bash
+uv run writ doctor      # reads real VRAM, says YES or exactly what is missing
+```
+
+`qwen3:8b` (~5 GB of Q4 weights) sits entirely in 8 GB of VRAM. `--offline`
+makes local a guarantee rather than a preference -- it fails instead of calling
+a remote model. See [LOCAL.md](LOCAL.md).
+
 ## Honest caveats
 
 - **The 15/15 eval is the reference planner**, a fixed script. It proves the tasks are
