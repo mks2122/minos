@@ -70,9 +70,22 @@ Reference planner, 16 Sep 2026, Windows 11 / Python 3.11:
 
 ### ⚠️ Read this before quoting the number
 
-**15/15 is a statement about the runtime, not about any model.** The reference planner is a fixed script — it is a control, establishing that the tasks are solvable and the runtime behaves. It says nothing about whether a language model can plan these tasks.
+**15/15 is a statement about the runtime, not about any model.** The reference planner is a fixed script — a control, establishing that the tasks are solvable and the runtime behaves. It says nothing about whether a language model can plan these tasks.
 
-**No model has been scored against this suite yet.** When one is, that number will be reported separately, with the model named and the date attached.
+## First real model result
+
+**`qwen3:8b`, fully offline on an 8 GB laptop GPU: 12/15 (80%).**
+ACHIEVE 6/9, **REFUSE 6/6**. Zero unverified effects, 100% rollback, zero halts.
+Full write-up: [eval/results-local-qwen3-8b.md](eval/results-local-qwen3-8b.md).
+
+That result corrects an argument made earlier in this project. I had cited
+OSWorld — best open-weight ~66.7%, a 32B at ~5.9% — to claim local models could
+not plan desktop work. **Wrong benchmark.** OSWorld measures GUI agents driving
+pixels; this runtime asks the planner to pick a typed function and fill its
+arguments. That is tool calling, which small models do competently, and the tier
+hierarchy is what converts the one problem into the other.
+
+No frontier model has been scored yet.
 
 The 47.6% fallback rate is high because most tasks are spreadsheet work, which routes to L2 by design. Fallback rate is most informative as a *trend*, and a single figure without the task mix behind it is close to meaningless.
 

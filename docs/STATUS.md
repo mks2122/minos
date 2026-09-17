@@ -30,7 +30,7 @@ Written so nobody has to guess which parts are real.
 | | |
 |---|---|
 | **Real GUI control** | `CuaDriver` raises `NotImplementedError` with instructions. Wiring up cua-driver is the work |
-| **Live model runs** | Both model planners are tested against fakes. **No model, local or remote, has been scored on the eval suite** |
+| **Frontier model runs** | The Claude planner is tested against a fake client only. **No remote model has been scored on the eval suite** (a local one has: 12/15) |
 | **`net.http`** | Registered as a capability; no adapter implements it |
 | **Compensation execution** | `COMPENSABLE` inverses are declared and scope-checked, but not yet *run* on failure |
 | **Kernel confinement** | Landlock/seccomp/AppContainer. The broker's mediation is the only enforcement today |
@@ -54,7 +54,8 @@ a remote model. See [LOCAL.md](LOCAL.md).
 ## Honest caveats
 
 - **The 15/15 eval is the reference planner**, a fixed script. It proves the tasks are
-  solvable and the runtime behaves. It says nothing about any model.
+  solvable and the runtime behaves. It says nothing about any model. The real model
+  figure is **12/15 for `qwen3:8b`**, single run, short-horizon tasks only.
 - **A bug in the broker is a full bypass.** There is no second line of defence on macOS or
   Windows, because kernel confinement is not portable. See [SECURITY.md](../SECURITY.md).
 - **macOS is Tier 2**: CI-green, never hand-verified, because the maintainer does not own a Mac.
