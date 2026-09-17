@@ -111,6 +111,16 @@ _SCHEMAS: dict[str, dict[str, Any]] = {
         {"path": _PATH, "sheet": _SHEET, "cell": _CELL, "value": {"type": "string"}},
         ["path", "cell", "value"],
     ),
+    "app.open": _tool(
+        "app_open",
+        (
+            "Open a file in the system's default application -- an image in the "
+            "image viewer, a PDF in the PDF reader. Use this when the user asks "
+            "to see, view, show, display or open something."
+        ),
+        {"path": _PATH},
+        ["path"],
+    ),
     "memory.recall": _tool(
         "memory_recall",
         (

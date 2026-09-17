@@ -78,6 +78,7 @@ for _spec in (
     OperationSpec("sheet.set_cell", "fs.write", "Write one cell"),
     OperationSpec("memory.recall", "memory.read", "Resolve a vague reference to a real path"),
     OperationSpec("memory.recent", "memory.read", "List recently changed files"),
+    OperationSpec("app.open", "app.open", "Open a file in the system default application"),
     OperationSpec("proc.spawn", "proc.spawn", "Run an external program"),
     OperationSpec("net.http", "net.http", "Make an HTTP request"),
     OperationSpec("ui.click", "ui.input", "Synthetic mouse click"),

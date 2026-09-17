@@ -340,3 +340,36 @@ def test_injected_filename_cannot_widen_a_scope(store, tmp_path):
         )
     )
     assert broker.submit(routed.invocation, routed.execute).status == "denied"
+
+
+def test_an_open_is_described_as_opened_not_changed(store, workspace, tmp_path):
+    """app.open is REVERSIBLE because it is checkpointed, but saying "changed"
+    for an open would be a lie in an explanation built to be accurate."""
+    from writ.tiers.l1_system import AppAdapter
+
+    photo = workspace / "photo.png"
+    photo.write_bytes(b"\x89PNG\r\n\x1a\n")
+    store.index_tree(workspace)
+
+    router = Router(adapters=(AppAdapter(),))
+    broker = Broker(
+        scopes=ScopeSet.parse([f"app.open:{workspace}/**"]),
+        audit=AuditLog(tmp_path / "audit.jsonl"),
+        store=FileCheckpointStore(tmp_path / "cp"),
+    )
+    routed = router.route(
+        ActionRequest(
+            goal_id="s",
+            intent="show me",
+            operation="app.open",
+            params={"path": str(photo)},
+        )
+    )
+    store.record_outcome(
+        broker.submit(routed.invocation, lambda inv: {"opened": str(photo), "handler": "x"}),
+        goal="show me the photo",
+    )
+
+    explanation = resolve("the photo", store).explain()
+    assert "opened it" in explanation
+    assert "changed it" not in explanation

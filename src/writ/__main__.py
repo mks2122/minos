@@ -47,10 +47,15 @@ def cmd_run(args: argparse.Namespace) -> int:
     from .audit import AuditLog
     from .broker import Broker, cli_approver
     from .checkpoint import FileCheckpointStore
-    from .memory import MemoryStore
+    from .memory import FileWatcher, MemoryStore
     from .router import Router
     from .scopes import ScopeSet
-    from .tiers.l1_system import FilesystemAdapter, MemoryAdapter, ProcessAdapter
+    from .tiers.l1_system import (
+        AppAdapter,
+        FilesystemAdapter,
+        MemoryAdapter,
+        ProcessAdapter,
+    )
     from .tiers.l2_adapters import TabularAdapter
 
     workspace = Path(args.workspace).expanduser().resolve()
@@ -63,6 +68,8 @@ def cmd_run(args: argparse.Namespace) -> int:
         scopes.append(f"fs.write:{workspace}/**")
     if args.allow_delete:
         scopes.append(f"fs.delete:{workspace}/**")
+    if args.allow_open:
+        scopes.append(f"app.open:{workspace}/**")
 
     state = Path(args.state).expanduser().resolve()
     operations = (
@@ -80,6 +87,7 @@ def cmd_run(args: argparse.Namespace) -> int:
         "sheet.set_cell",
         "memory.recall",
         "memory.recent",
+        "app.open",
     )
 
     # Index the workspace so "the excel from yesterday" has something to
@@ -88,6 +96,13 @@ def cmd_run(args: argparse.Namespace) -> int:
     memory = MemoryStore(state / "memory.db")
     memory.index_tree(workspace)
     memory.start_session("cli", args.goal)
+
+    # Notice edits made outside this runtime while it works -- someone saving
+    # in Excel mid-task, say. Without it memory only ever sees the world as it
+    # was when the run started.
+    watcher = FileWatcher(memory, roots=(workspace,), interval=args.watch_interval)
+    if args.watch:
+        watcher.start()
 
     try:
         planner = _planner(args, operations)
@@ -107,6 +122,7 @@ def cmd_run(args: argparse.Namespace) -> int:
         router=Router(
             adapters=(
                 FilesystemAdapter(),
+                AppAdapter(),
                 MemoryAdapter(memory, roots=(workspace,)),
                 ProcessAdapter(),
                 TabularAdapter(),
@@ -154,12 +170,29 @@ def cmd_run(args: argparse.Namespace) -> int:
         print(f"  {finished.summary}")
     print(f"\n  audit: {broker.audit.path}  ({broker.audit.count} entries)")
 
+    watcher.stop()
+    external = watcher.drain()
+
     # Record what this run touched, so the next one can resolve "yesterday's".
     for outcome in trajectory.outcomes:
         memory.record_outcome(outcome, session_id="cli", goal=args.goal)
+        if outcome.status == "ok" and outcome.invocation.request.operation == "app.open":
+            result = outcome.result if isinstance(outcome.result, dict) else {}
+            memory.record_open(
+                result.get("opened", ""),
+                str(result.get("handler", "")),
+                session_id="cli",
+                goal=args.goal,
+            )
     memory.end_session("cli")
     memory.close()
     print(f"  memory: {state / 'memory.db'}")
+    if external:
+        # Changes nobody asked this runtime to make. Worth saying out loud.
+        print(f"  watcher: {len(external)} file change(s) seen outside this run")
+    for problem in watcher.errors:
+        # A quiet watcher is indistinguishable from one that found nothing.
+        print(f"  watcher: {problem}", file=sys.stderr)
 
     return 0 if trajectory.succeeded else 1
 
@@ -382,6 +415,18 @@ def build_parser() -> argparse.ArgumentParser:
         help="defaults to qwen3:8b for local, claude-opus-5 for claude",
     )
     run.add_argument("--max-steps", type=int, default=20)
+    run.add_argument(
+        "--allow-open",
+        action="store_true",
+        help="grant app.open -- launch files in their default application",
+    )
+    run.add_argument(
+        "--no-watch",
+        dest="watch",
+        action="store_false",
+        help="do not watch the workspace for edits made outside this run",
+    )
+    run.add_argument("--watch-interval", type=float, default=2.0)
     run.add_argument(
         "--offline",
         action="store_true",

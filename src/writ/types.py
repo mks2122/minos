@@ -147,6 +147,22 @@ class EffectContract:
     compensation: ActionRequest | None = None
     """Required for ``COMPENSABLE``; the declared inverse."""
 
+    expects_change: bool | None = None
+    """Whether the targets should differ afterwards.
+
+    ``None`` derives it from the effect class, which is right almost always.
+    Set it to ``False`` for an action that must be checkpointed but should leave
+    its targets alone -- opening a file in a viewer is the motivating case: it
+    needs a checkpoint in case the handler rewrites the file, and "nothing
+    changed" is success rather than failure.
+    """
+
+    @property
+    def change_expected(self) -> bool:
+        if self.expects_change is not None:
+            return self.expects_change
+        return self.effect_class is not EffectClass.PURE
+
     def __post_init__(self) -> None:
         if self.effect_class is EffectClass.COMPENSABLE and self.compensation is None:
             raise ValueError(

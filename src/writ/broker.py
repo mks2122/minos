@@ -258,7 +258,7 @@ class Broker:
             )
 
         after = oracle.observe()
-        expect_change = contract.effect_class is not EffectClass.PURE
+        expect_change = contract.change_expected
         matched, detail, collateral = compare(oracle, before, after, expect_change=expect_change)
         if collateral:
             after = {**after, "_collateral": collateral}

@@ -34,6 +34,7 @@ class Settings:
     allow_delete: bool = False
     dry_run: bool = False
     offline: bool = False
+    allow_open: bool = False
     state: Path = field(default_factory=lambda: Path(".writ").resolve())
     max_steps: int = 20
 
@@ -55,6 +56,8 @@ class Settings:
             scopes.append(f"fs.write:{self.workspace}/**")
         if self.allow_delete:
             scopes.append(f"fs.delete:{self.workspace}/**")
+        if self.allow_open:
+            scopes.append(f"app.open:{self.workspace}/**")
         return scopes
 
     def cli_args(self, goal: str) -> list[str]:
@@ -78,6 +81,8 @@ class Settings:
             args.append("--allow-write")
         if self.allow_delete:
             args.append("--allow-delete")
+        if self.allow_open:
+            args.append("--allow-open")
         if self.dry_run:
             args.append("--dry-run")
         if self.offline:
@@ -120,6 +125,8 @@ def banner(settings: Settings) -> None:
         permissions.append("write")
     if settings.allow_delete:
         permissions.append("delete")
+    if settings.allow_open:
+        permissions.append("open apps")
     flags = ", ".join(permissions) + ("  [DRY RUN]" if settings.dry_run else "")
     print(f"  permitted : {flags}")
 
@@ -264,6 +271,7 @@ def _settings(settings: Settings) -> None:
         print(f"  7. dry run        {'yes' if settings.dry_run else 'no'}")
         print(f"  8. max steps      {settings.max_steps}")
         print(f"  9. offline only   {'yes' if settings.offline else 'no'}")
+        print(f" 10. allow open    {'yes' if settings.allow_open else 'no'}")
         print("  0. back")
 
         choice = ask("\n  change", "0")
@@ -308,6 +316,10 @@ def _settings(settings: Settings) -> None:
                 settings.max_steps = int(raw)
         elif choice == "9":
             settings.offline = yes_no("  refuse to call any remote model", settings.offline)
+        elif choice == "10":
+            settings.allow_open = yes_no(
+                "  allow opening files in their default app", settings.allow_open
+            )
 
 
 if __name__ == "__main__":
