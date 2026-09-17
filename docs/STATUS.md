@@ -18,7 +18,8 @@ Written so nobody has to guess which parts are real.
 | **L1** | Filesystem (9 operations), process spawn |
 | **L2** | Tabular: cell-level workbook operations. CSV built in, backends pluggable |
 | **L3** | Click / type / key / screenshot behind a driver protocol — **stub driver only** |
-| **Planner** | Protocol, scripted planners, Claude planner (manual tool loop, no Tool Runner) |
+| **Planner** | Protocol, scripted, Claude (manual tool loop), **local** (any OpenAI-compatible server) |
+| **Offline** | `writ doctor` checks readiness; `--offline` refuses to call a remote model |
 | **Agent loop** | Step budget, halt on `reconciliation_required`, abandon on repeated denial |
 | **Eval** | 15 tasks, binary, seeded, 6 REFUSE tasks, regression detection, CI-enforced |
 | **Memory** | File index, provenance, FTS, deictic resolution with explanations |
@@ -29,7 +30,7 @@ Written so nobody has to guess which parts are real.
 | | |
 |---|---|
 | **Real GUI control** | `CuaDriver` raises `NotImplementedError` with instructions. Wiring up cua-driver is the work |
-| **Live model runs** | The Claude planner is tested against a fake client. **No model has been scored on the eval suite** |
+| **Live model runs** | Both model planners are tested against fakes. **No model, local or remote, has been scored on the eval suite** |
 | **`net.http`** | Registered as a capability; no adapter implements it |
 | **Compensation execution** | `COMPENSABLE` inverses are declared and scope-checked, but not yet *run* on failure |
 | **Kernel confinement** | Landlock/seccomp/AppContainer. The broker's mediation is the only enforcement today |

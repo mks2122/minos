@@ -33,6 +33,7 @@ class Settings:
     allow_write: bool = False
     allow_delete: bool = False
     dry_run: bool = False
+    offline: bool = False
     state: Path = field(default_factory=lambda: Path(".writ").resolve())
     max_steps: int = 20
 
@@ -79,6 +80,8 @@ class Settings:
             args.append("--allow-delete")
         if self.dry_run:
             args.append("--dry-run")
+        if self.offline:
+            args.append("--offline")
         return args
 
 
@@ -109,6 +112,8 @@ def banner(settings: Settings) -> None:
     print(f"  workspace : {settings.workspace}")
     print(f"  planner   : {settings.effective_planner}  ({settings.effective_model})")
     print(f"  local llm : {'running' if local_up else 'not detected at ' + settings.base_url}")
+    if settings.offline:
+        print("  offline   : ON -- a remote model will never be called")
 
     permissions = ["read"]
     if settings.allow_write:
@@ -128,6 +133,7 @@ MENU = """
   6. Audit log              verify the hash chain
   7. Skills                 list what has been promoted
   8. Settings               workspace, planner, model, permissions
+  9. Doctor                 can this machine run fully offline?
   0. Quit
 """
 
@@ -162,6 +168,8 @@ def main() -> int:
                 cli(["skills", "--state", str(settings.state)])
             elif choice == "8":
                 _settings(settings)
+            elif choice == "9":
+                cli(["doctor", "--base-url", settings.base_url])
             else:
                 print(f"\n  '{choice}' is not on the menu")
         except KeyboardInterrupt:
@@ -255,6 +263,7 @@ def _settings(settings: Settings) -> None:
         print(f"  6. allow delete   {'yes' if settings.allow_delete else 'no'}")
         print(f"  7. dry run        {'yes' if settings.dry_run else 'no'}")
         print(f"  8. max steps      {settings.max_steps}")
+        print(f"  9. offline only   {'yes' if settings.offline else 'no'}")
         print("  0. back")
 
         choice = ask("\n  change", "0")
@@ -297,6 +306,8 @@ def _settings(settings: Settings) -> None:
             raw = ask("  max steps", str(settings.max_steps))
             if raw.isdigit() and int(raw) > 0:
                 settings.max_steps = int(raw)
+        elif choice == "9":
+            settings.offline = yes_no("  refuse to call any remote model", settings.offline)
 
 
 if __name__ == "__main__":
