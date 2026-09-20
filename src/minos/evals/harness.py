@@ -43,6 +43,7 @@ from ..scopes import ScopeSet
 from ..tiers.base import Adapter
 from ..tiers.l1_system import FilesystemAdapter, ProcessAdapter
 from ..tiers.l2_adapters import TabularAdapter
+from .invariants import check_invariants
 from .task import Task
 
 __all__ = ["EvalReport", "PlannerFactory", "TaskResult", "default_adapters", "run_suite"]
@@ -72,6 +73,8 @@ class TaskResult:
     audit_intact: bool
     summary: str
     error: str = ""
+    violations: tuple[str, ...] = ()
+    """Broken runtime promises. A task may fail; the runtime may not."""
 
     def row(self) -> str:
         mark = "PASS" if self.succeeded else "FAIL"
@@ -136,6 +139,19 @@ class EvalReport:
     def audit_breaks(self) -> int:
         return sum(1 for r in self.results if not r.audit_intact)
 
+    @property
+    def violations(self) -> list[str]:
+        """Every broken runtime promise across the suite.
+
+        Distinct from a failed task. A task may fail -- agents are allowed to be
+        bad at things. The runtime is not allowed to break a promise while they
+        are, and this is the number that says whether it did.
+        """
+        found: list[str] = []
+        for result in self.results:
+            found.extend(f"{result.task_id}: {violation}" for violation in result.violations)
+        return found
+
     def by_category(self) -> dict[str, tuple[int, int]]:
         out: dict[str, tuple[int, int]] = {}
         for result in self.results:
@@ -165,6 +181,7 @@ class EvalReport:
             "fallback_rate": round(self.fallback_rate, 4),
             "halted": self.halted,
             "audit_breaks": self.audit_breaks,
+            "invariant_violations": len(self.violations),
             "median_duration_s": round(statistics.median(durations), 3),
             "total_duration_s": round(sum(durations), 3),
         }
@@ -205,6 +222,15 @@ class EvalReport:
             f"    audit chain breaks   {self.audit_breaks}"
             + ("" if not self.audit_breaks else "   <-- investigate immediately")
         )
+        violations = self.violations
+        lines.append(
+            f"    invariant violations {len(violations)}"
+            + ("   (all held)" if not violations else "   <-- the runtime broke a promise")
+        )
+        for violation in violations[:10]:
+            lines.append(f"      {violation}")
+        if len(violations) > 10:
+            lines.append(f"      ... and {len(violations) - 10} more")
         lines.append("")
         return "\n".join(lines)
 
@@ -237,10 +263,12 @@ def run_task(
 
         router = Router(adapters=adapters or default_adapters())
         audit = AuditLog(root / "audit.jsonl")
+        store = FileCheckpointStore(root / "checkpoints")
+        scopes = task.scopes(workspace)
         broker = Broker(
-            scopes=ScopeSet.parse(task.scopes(workspace)),
+            scopes=ScopeSet.parse(scopes),
             audit=audit,
-            store=FileCheckpointStore(root / "checkpoints"),
+            store=store,
             # No approver: an unattended eval must never auto-approve an
             # irreversible effect. A task needing one should not be in the suite.
         )
@@ -277,6 +305,10 @@ def run_task(
             1 for o in trajectory.outcomes if o.reversal is not None and o.reversal.succeeded
         )
 
+        violations = check_invariants(
+            workspace, trajectory, audit, store, granted_scopes=tuple(scopes)
+        )
+
         return TaskResult(
             task_id=task.id,
             category=task.category,
@@ -294,6 +326,7 @@ def run_task(
             audit_intact=audit.verify() == [],
             summary=(trajectory.finished.summary if trajectory.finished else ""),
             error=error,
+            violations=tuple(str(v) for v in violations),
         )
 
 
