@@ -16,12 +16,15 @@ uv.lock.bak
 .coverage
 htmlcov/
 
-# writ runtime state — never commit audit logs or checkpoints
+# minos runtime state — never commit audit logs, checkpoints or sandboxes
 *.jsonl
-.writ/
+.minos/
 checkpoints/
+sandbox/
 
-# Local
+# Local configuration. .env.example is the committed one.
 .env
+.env.local
+!.env.example
 .DS_Store
 Thumbs.db
