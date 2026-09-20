@@ -50,6 +50,7 @@ KNOWN_CAPABILITIES = frozenset(
         "memory.read",
         "app.open",
         "state.undo",
+        "code.run",
     }
 )
 

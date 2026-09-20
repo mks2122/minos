@@ -87,6 +87,12 @@ for _spec in (
     OperationSpec("ui.screenshot", "ui.input", "Capture the screen"),
     OperationSpec("clipboard.read", "clipboard.read", "Read the clipboard"),
     OperationSpec("clipboard.write", "clipboard.write", "Write the clipboard"),
+    OperationSpec("code.run", "code.run", "Run code in the sandbox scratchpad"),
+    OperationSpec(
+        "code.materialize",
+        "fs.write",
+        "Copy a sandbox artifact onto the real filesystem",
+    ),
     OperationSpec(
         "state.undo",
         "state.undo",

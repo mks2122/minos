@@ -40,6 +40,14 @@ class Tier(enum.StrEnum):
 
     L1_SYSTEM = "L1"
     L2_ADAPTER = "L2"
+    L2_CODE = "L2.5"
+    """Code written at runtime and run in the sandbox.
+
+    Below a typed adapter because a script is less predictable than a function
+    call, and above the GUI because it is far more reliable than clicking. A
+    task that reaches here has no typed tool; a task that reaches L3 has no
+    program either."""
+
     L3_GUI = "L3"
 
 
