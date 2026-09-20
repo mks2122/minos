@@ -1,6 +1,6 @@
 # Status
 
-Last updated 16 Sep 2026. **269 tests passing, 1 skipped. Eval 15/15, no regressions.
+Last updated 20 Sep 2026. **409 tests passing, 3 skipped. Eval 15/15, no regressions.
 Ruff clean, mypy strict clean.**
 
 Written so nobody has to guess which parts are real.
@@ -11,7 +11,7 @@ Written so nobody has to guess which parts are real.
 |---|---|
 | **Policy broker** | Capability scopes, admission, dry-run, checkpoint, verify, reverse, record |
 | **Capability scopes** | Deny beats allow, ties deny, resolved-real-path matching, structurally immutable, narrowing-only |
-| **Checkpointing** | Copy-before-write journal over declared targets. Portable; `clonefile`/`FICLONE` are optional fast paths |
+| **Checkpointing** | Copy-before-write journal over declared targets. Portable; `clonefile`/`FICLONE` are optional fast paths. Refuses targets it cannot copy, restores mode/mtime, handles directories and symlinks, `gc()` reclaims |
 | **Oracles** | File hash, file tree (collateral detection), path existence, cell, screen (weak), null (counted) |
 | **Audit** | Append-only hash-chained JSONL, tamper-evident |
 | **Tier router** | L1 → L2 → L3 with recorded degradation and published fallback rate |
@@ -19,7 +19,7 @@ Written so nobody has to guess which parts are real.
 | **L2** | Tabular: cell-level workbook operations. CSV built in, backends pluggable |
 | **L3** | Click / type / key / screenshot behind a driver protocol — **stub driver only** |
 | **Planner** | Protocol, scripted, Claude (manual tool loop), **local** (any OpenAI-compatible server) |
-| **Offline** | `writ doctor` checks readiness; `--offline` refuses to call a remote model |
+| **Offline** | `minos doctor` checks readiness; `--offline` refuses to call a remote model |
 | **Agent loop** | Step budget, halt on `reconciliation_required`, abandon on repeated denial |
 | **Eval** | 15 tasks, binary, seeded, 6 REFUSE tasks, regression detection, CI-enforced |
 | **Memory** | File index, provenance, **app/open history**, **polling filesystem watcher**, FTS, deictic resolution with explanations -- wired into the agent as scope-gated `memory.recall` / `memory.recent` |
@@ -39,6 +39,9 @@ Written so nobody has to guess which parts are real.
 | **OS-wide window history** | Only openings *this runtime* performed are recorded. A document you double-clicked in Explorer is invisible |
 | **Content indexing** | Memory indexes filenames and metadata, never file contents. "the file about Q3 revenue" matches on the path, not the text |
 | **Cost accounting** | No token or dollar tracking in the eval harness |
+| **Checkpoint encryption** | The object store holds plaintext copies. `chmod 0700` on POSIX, inherited ACLs on Windows |
+| **Checkpoint retention** | `gc()` exists; no policy calls it |
+| **Atomic multi-target restore** | Objects are checked up front, but a mid-sequence write failure leaves earlier targets restored |
 | **Multi-run variance** | Agents are stochastic; single-run scores overstate dependability |
 
 ## Running fully offline
@@ -46,7 +49,7 @@ Written so nobody has to guess which parts are real.
 Supported and verified on Windows 11 / RTX 5060 Laptop (8 GB VRAM):
 
 ```bash
-uv run writ doctor      # reads real VRAM, says YES or exactly what is missing
+uv run minos doctor      # reads real VRAM, says YES or exactly what is missing
 ```
 
 `qwen3:8b` (~5 GB of Q4 weights) sits entirely in 8 GB of VRAM. `--offline`
@@ -66,7 +69,12 @@ a remote model. See [LOCAL.md](LOCAL.md).
 
 ## Next
 
-1. Wire up `cua-driver` so L3 is real, and add GUI tasks to the eval suite.
-2. Score a model on the suite and publish the number, with the model named and dated.
-3. Execute `COMPENSABLE` inverses on failure — currently declared but not run.
-4. Landlock on Linux as defence-in-depth.
+See [PLAN-GENERALITY.md](PLAN-GENERALITY.md) for M17 onward, and [REVIEW.md](REVIEW.md)
+for the audit those milestones answer.
+
+1. `code.run` — a sandboxed scratchpad, so capability stops being a per-tool cost.
+2. Execute `COMPENSABLE` inverses on failure — currently declared but not run, and
+   `PLAN.md`'s own top risk says to stop and fix it.
+3. Wire up `cua-driver` so L3 is real, and add GUI tasks to the eval suite.
+4. Score a model on the suite and publish the number, with the model named and dated.
+5. Landlock on Linux as defence-in-depth.

@@ -1,7 +1,7 @@
 """Filesystem watching.
 
 Without this, memory only learns about the world at the moment a run starts.
-Edit a spreadsheet in Excel while `writ` is not running and it has no idea until
+Edit a spreadsheet in Excel while `minos` is not running and it has no idea until
 the next scan -- and by then it sees a changed mtime with no notion that
 anything happened in between.
 
@@ -142,7 +142,7 @@ class FileWatcher:
             self._note(f"could not take a baseline scan: {exc}")
             return
         self._stop.clear()
-        self._thread = threading.Thread(target=self._loop, name="writ-file-watcher", daemon=True)
+        self._thread = threading.Thread(target=self._loop, name="minos-file-watcher", daemon=True)
         self._thread.start()
 
     def stop(self, timeout: float = 5.0) -> None:

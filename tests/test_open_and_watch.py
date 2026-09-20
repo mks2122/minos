@@ -13,17 +13,17 @@ from pathlib import Path
 
 import pytest
 
-from writ.audit import AuditLog
-from writ.broker import Broker
-from writ.checkpoint import FileCheckpointStore
-from writ.memory import FileWatcher, MemoryStore, scan
-from writ.memory.watch import diff
-from writ.planner.schemas import operation_for_tool, tool_definitions
-from writ.router import NoAdapter, Router
-from writ.scopes import ScopeSet
-from writ.tiers.l1_system import AppAdapter, FilesystemAdapter
-from writ.tiers.l1_system.app import default_handler
-from writ.types import ActionRequest, EffectClass, Tier
+from minos.audit import AuditLog
+from minos.broker import Broker
+from minos.checkpoint import FileCheckpointStore
+from minos.memory import FileWatcher, MemoryStore, scan
+from minos.memory.watch import diff
+from minos.planner.schemas import operation_for_tool, tool_definitions
+from minos.router import NoAdapter, Router
+from minos.scopes import ScopeSet
+from minos.tiers.l1_system import AppAdapter, FilesystemAdapter
+from minos.tiers.l1_system.app import default_handler
+from minos.types import ActionRequest, EffectClass, Tier
 
 
 @pytest.fixture
@@ -292,7 +292,7 @@ def test_diff_detects_each_kind():
 
 
 def test_watcher_sees_an_edit_made_outside_the_runtime(workspace):
-    """The point: someone saving in Excel while writ is not looking."""
+    """The point: someone saving in Excel while minos is not looking."""
     store = MemoryStore()
     watcher = FileWatcher(store, roots=(workspace,))
     watcher.prime()
@@ -354,7 +354,7 @@ def test_watcher_runs_and_stops_on_a_thread(workspace):
 
 def test_watcher_survives_a_scan_error(workspace, monkeypatch):
     """A watcher that dies on one locked file is worse than one that misses it."""
-    import writ.memory.watch as watch_module
+    import minos.memory.watch as watch_module
 
     store = MemoryStore()
     watcher = FileWatcher(store, roots=(workspace,), interval=0.05)
@@ -415,7 +415,7 @@ def test_the_store_is_usable_from_another_thread(workspace):
 def test_a_failed_baseline_does_not_take_the_run_down(workspace, monkeypatch):
     """A watcher is an accessory. One that crashes the run it serves is worse
     than one that misses an edit -- but it must say so rather than go quiet."""
-    import writ.memory.watch as watch_module
+    import minos.memory.watch as watch_module
 
     store = MemoryStore()
     watcher = FileWatcher(store, roots=(workspace,))

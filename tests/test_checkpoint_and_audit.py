@@ -6,9 +6,9 @@ import json
 from pathlib import Path
 
 from conftest import make_invocation
-from writ.audit import GENESIS, AuditLog
-from writ.checkpoint import FileCheckpointStore
-from writ.types import AdmissionDecision, ProvenanceRecord
+from minos.audit import GENESIS, AuditLog
+from minos.checkpoint import FileCheckpointStore
+from minos.types import AdmissionDecision, ProvenanceRecord
 
 
 def write(path: Path, text: str) -> None:

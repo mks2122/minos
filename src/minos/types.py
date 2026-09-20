@@ -102,7 +102,7 @@ class Oracle(Protocol):
         ...
 
     def verifiable(self) -> bool:
-        """False for :class:`~writ.oracles.NullOracle`, which is counted and published."""
+        """False for :class:`~minos.oracles.NullOracle`, which is counted and published."""
         ...
 
 

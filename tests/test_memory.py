@@ -8,15 +8,15 @@ from pathlib import Path
 
 import pytest
 
-from writ.audit import AuditLog
-from writ.broker import Broker
-from writ.checkpoint import FileCheckpointStore
-from writ.memory import MemoryStore, resolve
-from writ.router import Router
-from writ.scopes import ScopeSet
-from writ.tiers.l1_system import FilesystemAdapter
-from writ.tiers.l2_adapters import TabularAdapter
-from writ.types import ActionRequest
+from minos.audit import AuditLog
+from minos.broker import Broker
+from minos.checkpoint import FileCheckpointStore
+from minos.memory import MemoryStore, resolve
+from minos.router import Router
+from minos.scopes import ScopeSet
+from minos.tiers.l1_system import FilesystemAdapter
+from minos.tiers.l2_adapters import TabularAdapter
+from minos.types import ActionRequest
 
 DAY = 86_400.0
 
@@ -345,7 +345,7 @@ def test_injected_filename_cannot_widen_a_scope(store, tmp_path):
 def test_an_open_is_described_as_opened_not_changed(store, workspace, tmp_path):
     """app.open is REVERSIBLE because it is checkpointed, but saying "changed"
     for an open would be a lie in an explanation built to be accurate."""
-    from writ.tiers.l1_system import AppAdapter
+    from minos.tiers.l1_system import AppAdapter
 
     photo = workspace / "photo.png"
     photo.write_bytes(b"\x89PNG\r\n\x1a\n")

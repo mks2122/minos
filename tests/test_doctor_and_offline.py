@@ -1,4 +1,4 @@
-"""``writ doctor`` and the ``--offline`` guarantee.
+"""``minos doctor`` and the ``--offline`` guarantee.
 
 Two things are being pinned here. The doctor must size its recommendations from
 real VRAM, because the usual way someone concludes "local doesn't work" is
@@ -10,8 +10,8 @@ from __future__ import annotations
 
 import pytest
 
-from writ.__main__ import _planner, build_parser, main
-from writ.doctor import MODELS, Report, recommend, render
+from minos.__main__ import _planner, build_parser, main
+from minos.doctor import MODELS, Report, recommend, render
 
 # -- model sizing ----------------------------------------------------------
 
@@ -113,7 +113,7 @@ def test_doctor_output_survives_a_windows_console():
 
 
 def test_doctor_command_exit_code_reflects_readiness(monkeypatch, capsys):
-    import writ.doctor as doctor_module
+    import minos.doctor as doctor_module
 
     monkeypatch.setattr(
         doctor_module,
@@ -138,7 +138,7 @@ def test_offline_refuses_an_explicit_remote_planner():
 
 def test_offline_refuses_to_fall_back_when_no_server(monkeypatch):
     """The whole point: it fails rather than quietly reaching the network."""
-    import writ.planner.local as local_module
+    import minos.planner.local as local_module
 
     monkeypatch.setattr(local_module, "server_available", lambda url, timeout=1.5: False)
     args = build_parser().parse_args(["run", "g", "--offline"])
@@ -147,17 +147,17 @@ def test_offline_refuses_to_fall_back_when_no_server(monkeypatch):
 
 
 def test_offline_points_at_the_doctor(monkeypatch):
-    import writ.planner.local as local_module
+    import minos.planner.local as local_module
 
     monkeypatch.setattr(local_module, "server_available", lambda url, timeout=1.5: False)
     args = build_parser().parse_args(["run", "g", "--offline"])
-    with pytest.raises(ImportError, match="writ doctor"):
+    with pytest.raises(ImportError, match="minos doctor"):
         _planner(args, ("fs.read",))
 
 
 def test_offline_is_satisfied_by_a_running_server(monkeypatch):
-    import writ.planner.local as local_module
-    from writ.planner.local import LocalPlanner
+    import minos.planner.local as local_module
+    from minos.planner.local import LocalPlanner
 
     monkeypatch.setattr(local_module, "server_available", lambda url, timeout=1.5: True)
     args = build_parser().parse_args(["run", "g", "--offline"])
@@ -165,7 +165,7 @@ def test_offline_is_satisfied_by_a_running_server(monkeypatch):
 
 
 def test_without_offline_the_fallback_is_allowed(monkeypatch):
-    import writ.planner.local as local_module
+    import minos.planner.local as local_module
 
     monkeypatch.setattr(local_module, "server_available", lambda url, timeout=1.5: False)
     args = build_parser().parse_args(["run", "g"])
@@ -184,7 +184,7 @@ def test_a_server_with_no_models_does_not_crash(monkeypatch):
     `.get(key, default)` returns the stored None, not the default -- found by
     pointing the doctor at a freshly installed server.
     """
-    import writ.doctor as doctor_module
+    import minos.doctor as doctor_module
 
     class _Response:
         status = 200
@@ -216,7 +216,7 @@ def test_a_missing_runner_is_still_reported_when_nothing_serves():
 
 
 def test_runner_is_found_outside_path(monkeypatch, tmp_path):
-    import writ.doctor as doctor_module
+    import minos.doctor as doctor_module
 
     programs = tmp_path / "Programs" / "Ollama"
     programs.mkdir(parents=True)

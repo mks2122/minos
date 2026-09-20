@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Interactive menu for writ.
+"""Interactive menu for minos.
 
     uv run python main.py
 
@@ -19,7 +19,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent / "src"))
 
-from writ.planner.local import SUGGESTED_MODELS, server_available
+from minos.planner.local import SUGGESTED_MODELS, server_available
 
 LOCAL_URL = "http://localhost:11434/v1"
 
@@ -35,7 +35,7 @@ class Settings:
     dry_run: bool = False
     offline: bool = False
     allow_open: bool = False
-    state: Path = field(default_factory=lambda: Path(".writ").resolve())
+    state: Path = field(default_factory=lambda: Path(".minos").resolve())
     max_steps: int = 20
 
     @property
@@ -112,7 +112,7 @@ def yes_no(prompt: str, default: bool = False) -> bool:
 def banner(settings: Settings) -> None:
     local_up = server_available(settings.base_url)
     print("\n" + "=" * 62)
-    print("  writ -- the model asks, the runtime decides")
+    print("  minos -- the model asks, the runtime decides")
     print("=" * 62)
     print(f"  workspace : {settings.workspace}")
     print(f"  planner   : {settings.effective_planner}  ({settings.effective_model})")
@@ -146,7 +146,7 @@ MENU = """
 
 
 def main() -> int:
-    from writ.__main__ import main as cli
+    from minos.__main__ import main as cli
 
     settings = Settings()
     while True:

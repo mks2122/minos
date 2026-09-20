@@ -1,6 +1,6 @@
 """The policy broker — the only component with execution authority.
 
-Invariant I1: the planner emits :class:`~writ.types.ActionRequest` objects and
+Invariant I1: the planner emits :class:`~minos.types.ActionRequest` objects and
 has no way to act. Everything that touches the world goes through
 :meth:`Broker.submit`.
 
@@ -26,7 +26,7 @@ from typing import Any
 
 from .audit import AuditLog
 from .capabilities import capability_for
-from .checkpoint import CheckpointStore
+from .checkpoint import CheckpointStore, UnprotectableTarget
 from .oracles import NullOracle, compare
 from .scopes import ScopeSet
 from .types import (
@@ -134,7 +134,7 @@ class Broker:
                 verdict="deny",
                 rationale=(
                     f"unknown operation {invocation.request.operation!r}; "
-                    "operations must be registered in writ.capabilities"
+                    "operations must be registered in minos.capabilities"
                 ),
             )
 
@@ -239,9 +239,50 @@ class Broker:
 
         checkpoint_id: CheckpointId | None = None
         if contract.effect_class is EffectClass.REVERSIBLE and contract.targets:
-            checkpoint_id = self.store.checkpoint(tuple(Path(t) for t in contract.targets))
+            try:
+                checkpoint_id = self.store.checkpoint(tuple(Path(t) for t in contract.targets))
+            except UnprotectableTarget as exc:
+                # A target we cannot copy is a target we cannot put back. Acting
+                # anyway would mean claiming REVERSIBLE for an effect that is
+                # not, which is the one lie this component must never tell.
+                return self._record(
+                    invocation,
+                    decision,
+                    status="failed",
+                    error=f"refused: {exc}",
+                )
+
+            intact, missing = self.store.ensure_intact(checkpoint_id)
+            if not intact:
+                # Discovering this at rollback time is discovering it too late.
+                return self._record(
+                    invocation,
+                    decision,
+                    status="failed",
+                    checkpoint_id=checkpoint_id,
+                    error=(
+                        f"refused: checkpoint is incomplete, {len(missing)} object(s) "
+                        "missing from the store"
+                    ),
+                )
 
         before = oracle.observe()
+
+        if checkpoint_id is not None:
+            # Close the gap between copying and acting. Something that changed
+            # in that window would be rolled back to a state the user never had.
+            unchanged, drifted = self.store.unchanged_since(checkpoint_id)
+            if not unchanged:
+                return self._record(
+                    invocation,
+                    decision,
+                    status="failed",
+                    checkpoint_id=checkpoint_id,
+                    error=(
+                        f"refused: {len(drifted)} target(s) changed between the "
+                        f"checkpoint and the action: {', '.join(drifted[:3])}"
+                    ),
+                )
 
         try:
             result = executor(invocation)

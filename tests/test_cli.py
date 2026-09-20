@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from writ.__main__ import build_parser, main
+from minos.__main__ import build_parser, main
 
 
 @pytest.fixture
@@ -91,17 +91,17 @@ def test_index_then_recall(workspace, tmp_path, capsys):
 
 def test_recall_without_an_index_explains_itself(tmp_path, capsys):
     assert main(["recall", "anything", "--state", str(tmp_path / "nope")]) == 2
-    assert "Run `writ index" in capsys.readouterr().err
+    assert "Run `minos index" in capsys.readouterr().err
 
 
 def test_audit_verifies_a_chain(workspace, tmp_path, capsys):
-    from writ.audit import AuditLog
-    from writ.broker import Broker
-    from writ.checkpoint import FileCheckpointStore
-    from writ.router import Router
-    from writ.scopes import ScopeSet
-    from writ.tiers.l1_system import FilesystemAdapter
-    from writ.types import ActionRequest
+    from minos.audit import AuditLog
+    from minos.broker import Broker
+    from minos.checkpoint import FileCheckpointStore
+    from minos.router import Router
+    from minos.scopes import ScopeSet
+    from minos.tiers.l1_system import FilesystemAdapter
+    from minos.types import ActionRequest
 
     log = tmp_path / "audit.jsonl"
     broker = Broker(
@@ -170,8 +170,8 @@ def test_run_rejects_an_unknown_planner(workspace, capsys):
 
 
 def test_local_planner_is_selectable(workspace):
-    from writ.__main__ import _planner
-    from writ.planner.local import LocalPlanner
+    from minos.__main__ import _planner
+    from minos.planner.local import LocalPlanner
 
     args = build_parser().parse_args(
         [
@@ -193,7 +193,7 @@ def test_local_planner_is_selectable(workspace):
 
 def test_local_planner_does_not_inherit_the_claude_default_model():
     """--planner local without --model must not ask Ollama for claude-opus-5."""
-    from writ.__main__ import _planner
+    from minos.__main__ import _planner
 
     args = build_parser().parse_args(["run", "goal", "--planner", "local"])
     assert _planner(args, ("fs.read",)).model == "qwen3:8b"
@@ -201,7 +201,7 @@ def test_local_planner_does_not_inherit_the_claude_default_model():
 
 def test_run_prints_the_scopes_it_will_use(workspace, tmp_path, capsys, monkeypatch):
     """You should be able to see what you granted before anything happens."""
-    import writ.__main__ as cli
+    import minos.__main__ as cli
 
     class Refuses:
         def next_action(self, goal, observations, scopes):
@@ -229,11 +229,11 @@ def test_run_prints_the_scopes_it_will_use(workspace, tmp_path, capsys, monkeypa
 
 
 def test_run_warns_loudly_about_yes(workspace, tmp_path, capsys, monkeypatch):
-    import writ.__main__ as cli
+    import minos.__main__ as cli
 
     class Stops:
         def next_action(self, goal, observations, scopes):
-            from writ.planner.base import Done
+            from minos.planner.base import Done
 
             return Done(summary="nothing to do", succeeded=True)
 
@@ -244,10 +244,10 @@ def test_run_warns_loudly_about_yes(workspace, tmp_path, capsys, monkeypatch):
 
 
 def test_run_end_to_end_with_a_scripted_planner(workspace, tmp_path, capsys, monkeypatch):
-    import writ.__main__ as cli
-    from writ.planner.base import Done
-    from writ.planner.scripted import ScriptedPlanner
-    from writ.types import ActionRequest
+    import minos.__main__ as cli
+    from minos.planner.base import Done
+    from minos.planner.scripted import ScriptedPlanner
+    from minos.types import ActionRequest
 
     book = workspace / "sales.csv"
     monkeypatch.setattr(
@@ -287,10 +287,10 @@ def test_run_end_to_end_with_a_scripted_planner(workspace, tmp_path, capsys, mon
 
 
 def test_run_dry_run_changes_nothing(workspace, tmp_path, capsys, monkeypatch):
-    import writ.__main__ as cli
-    from writ.planner.base import Done
-    from writ.planner.scripted import ScriptedPlanner
-    from writ.types import ActionRequest
+    import minos.__main__ as cli
+    from minos.planner.base import Done
+    from minos.planner.scripted import ScriptedPlanner
+    from minos.types import ActionRequest
 
     book = workspace / "sales.csv"
     before = book.read_bytes()
@@ -327,10 +327,10 @@ def test_run_dry_run_changes_nothing(workspace, tmp_path, capsys, monkeypatch):
 
 
 def test_run_denies_outside_the_workspace(workspace, tmp_path, capsys, monkeypatch):
-    import writ.__main__ as cli
-    from writ.planner.base import Done
-    from writ.planner.scripted import ScriptedPlanner
-    from writ.types import ActionRequest
+    import minos.__main__ as cli
+    from minos.planner.base import Done
+    from minos.planner.scripted import ScriptedPlanner
+    from minos.types import ActionRequest
 
     outside = tmp_path / "secrets.txt"
     outside.write_text("sensitive", encoding="utf-8")

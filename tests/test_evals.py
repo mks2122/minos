@@ -12,12 +12,12 @@ import json
 
 import pytest
 
-from writ.evals import SUITE, run_suite, run_task
-from writ.evals.harness import EvalReport, TaskResult
-from writ.evals.suite import reference_script, scripted_factory
-from writ.evals.task import TaskKind
-from writ.planner.base import Done
-from writ.planner.scripted import ScriptedPlanner
+from minos.evals import SUITE, run_suite, run_task
+from minos.evals.harness import EvalReport, TaskResult
+from minos.evals.suite import reference_script, scripted_factory
+from minos.evals.task import TaskKind
+from minos.planner.base import Done
+from minos.planner.scripted import ScriptedPlanner
 
 # -- the suite itself ------------------------------------------------------
 

@@ -7,7 +7,7 @@ back into the model's turn would dissolve the architecture's central claim while
 looking like a convenience.
 
 So the loop is manual and inverted: a ``tool_use`` block becomes an
-:class:`~writ.types.ActionRequest`, the broker decides whether it may happen, the
+:class:`~minos.types.ActionRequest`, the broker decides whether it may happen, the
 broker performs it, and the outcome comes back as a ``tool_result``. The model
 never holds a handle to anything.
 
@@ -32,7 +32,7 @@ __all__ = ["SYSTEM_PROMPT", "ClaudePlanner"]
 DEFAULT_MODEL = "claude-opus-5"
 
 SYSTEM_PROMPT = """\
-You are the planner for `writ`, a desktop agent runtime.
+You are the planner for `minos`, a desktop agent runtime.
 
 You do not perform actions. You request them. A policy broker decides whether \
 each request is admissible, performs it on your behalf, verifies the result \

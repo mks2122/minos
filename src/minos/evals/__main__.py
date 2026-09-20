@@ -1,9 +1,9 @@
-"""``python -m writ.evals`` -- run the suite and print the numbers.
+"""``python -m minos.evals`` -- run the suite and print the numbers.
 
-    uv run python -m writ.evals                      # scripted reference
-    uv run python -m writ.evals --json out.json      # machine-readable
-    uv run python -m writ.evals --baseline out.json  # regression check
-    uv run python -m writ.evals --planner claude     # needs an API key
+    uv run python -m minos.evals                      # scripted reference
+    uv run python -m minos.evals --json out.json      # machine-readable
+    uv run python -m minos.evals --baseline out.json  # regression check
+    uv run python -m minos.evals --planner claude     # needs an API key
 
 The scripted run is the one to start from: it establishes that every task in
 the suite is achievable, which is what makes a later model score mean anything.
@@ -39,7 +39,7 @@ _OPERATIONS = (
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="writ.evals")
+    parser = argparse.ArgumentParser(prog="minos.evals")
     parser.add_argument("--planner", default="scripted", choices=["scripted", "claude", "local"])
     parser.add_argument(
         "--base-url",

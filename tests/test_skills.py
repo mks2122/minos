@@ -12,15 +12,15 @@ from pathlib import Path
 
 import pytest
 
-from writ.agent import Agent
-from writ.audit import AuditLog
-from writ.broker import Broker
-from writ.checkpoint import FileCheckpointStore
-from writ.planner.base import Done, Trajectory
-from writ.planner.scripted import ScriptedPlanner
-from writ.router import Router
-from writ.scopes import ScopeSet, ScopeViolation
-from writ.skills import (
+from minos.agent import Agent
+from minos.audit import AuditLog
+from minos.broker import Broker
+from minos.checkpoint import FileCheckpointStore
+from minos.planner.base import Done, Trajectory
+from minos.planner.scripted import ScriptedPlanner
+from minos.router import Router
+from minos.scopes import ScopeSet, ScopeViolation
+from minos.skills import (
     PromotionRefused,
     Skill,
     SkillPlanner,
@@ -28,10 +28,10 @@ from writ.skills import (
     promote,
     why_not_promotable,
 )
-from writ.skills.replay import check_drift, replay_is_safe
-from writ.tiers.l1_system import FilesystemAdapter, ProcessAdapter
-from writ.tiers.l2_adapters import TabularAdapter
-from writ.types import ActionRequest, EffectClass
+from minos.skills.replay import check_drift, replay_is_safe
+from minos.tiers.l1_system import FilesystemAdapter, ProcessAdapter
+from minos.tiers.l2_adapters import TabularAdapter
+from minos.types import ActionRequest, EffectClass
 
 SALES = [
     ["Quarter", "Revenue", "Units"],
@@ -384,7 +384,7 @@ def test_markdown_flags_steps_that_reprompt(tmp_path):
 
 
 def _irreversible_step():
-    from writ.skills.skill import SkillStep
+    from minos.skills.skill import SkillStep
 
     return SkillStep(
         operation="proc.spawn",

@@ -98,7 +98,7 @@ class Router:
     def route(self, request: ActionRequest) -> Routed:
         if capability_for(request.operation) is None:
             raise NoAdapter(
-                f"operation {request.operation!r} is not registered in writ.capabilities"
+                f"operation {request.operation!r} is not registered in minos.capabilities"
             )
 
         attempted: list[str] = []

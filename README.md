@@ -1,4 +1,4 @@
-# writ
+# minos
 
 > **The model asks. The runtime decides.**
 
@@ -25,12 +25,12 @@ to do, then does it. Safety is retrofitted by putting the whole thing in a conta
 That works on a throwaway VM. It fails the moment the agent needs your real files — which
 is the only version anyone actually wants.
 
-`writ` inverts it. The planner emits *requests*. The broker decides whether each one is
+`minos` inverts it. The planner emits *requests*. The broker decides whether each one is
 admissible, records why, executes it on the planner's behalf, verifies that what happened
 is what was promised, and puts things back when it wasn't.
 
 The design premise is deliberately pessimistic: **assume the planner is compromised.**
-Prompt injection is unsolved, so rather than trying to make the model immune, `writ` makes
+Prompt injection is unsolved, so rather than trying to make the model immune, `minos` makes
 its compromise survivable — it cannot do anything it was not already scoped to do.
 
 ---
@@ -49,19 +49,19 @@ prints the exact scopes before it does anything.
 There is a flag-driven CLI too, if you prefer:
 
 ```bash
-uv run writ --help
+uv run minos --help
 ```
 
-Everything except `writ run` works with no API key and no network:
+Everything except `minos run` works with no API key and no network:
 
 | | |
 |---|---|
-| `writ demo` | dry-run -> execute -> byte-identical rollback -> a refused request |
-| `writ eval` | the 15-task suite, with the honesty metrics |
-| `writ index ./data` | build the memory index |
-| `writ recall "the excel from yesterday"` | resolve a vague reference, with reasons |
-| `writ audit .writ/audit.jsonl` | verify the hash chain |
-| `writ skills` | list stored skills |
+| `minos demo` | dry-run -> execute -> byte-identical rollback -> a refused request |
+| `minos eval` | the 15-task suite, with the honesty metrics |
+| `minos index ./data` | build the memory index |
+| `minos recall "the excel from yesterday"` | resolve a vague reference, with reasons |
+| `minos audit .minos/audit.jsonl` | verify the hash chain |
+| `minos skills` | list stored skills |
 
 To actually drive an agent you need a model:
 
@@ -69,8 +69,8 @@ To actually drive an agent you need a model:
 export ANTHROPIC_API_KEY=sk-ant-...        # or: ant auth login
 
 # read-only by default -- granting write is a thing you type
-uv run writ run "set Q3 revenue to 48200" -w ./data --allow-write --dry-run
-uv run writ run "set Q3 revenue to 48200" -w ./data --allow-write
+uv run minos run "set Q3 revenue to 48200" -w ./data --allow-write --dry-run
+uv run minos run "set Q3 revenue to 48200" -w ./data --allow-write
 ```
 
 `--dry-run` shows the diff of what *would* happen and changes nothing. Without
@@ -80,7 +80,7 @@ why it prints a warning.
 ### Fully local
 
 ```bash
-uv run writ doctor                 # what's missing, sized to your GPU
+uv run minos doctor                 # what's missing, sized to your GPU
 ollama pull qwen3:8b && ollama serve
 uv run python main.py              # auto-detects the server and uses it
 ```
@@ -123,10 +123,10 @@ thinking badly, it is not thinking twice.
 Measure it rather than trusting any of the above:
 
 ```bash
-uv run writ eval --planner local --model qwen3:8b
+uv run minos eval --planner local --model qwen3:8b
 ```
 
-### What `writ demo` shows
+### What `minos demo` shows
 
 Dry-run the edit, apply it for real, roll it back byte-identical, then watch an
 out-of-scope request get refused before the executor is ever called:
@@ -218,7 +218,7 @@ This taxonomy is the point of the project.
 | `IRREVERSIBLE` | **always prompts. Never auto. Never replayed without confirmation** |
 
 Filesystem checkpoints cannot undo a sent email or a database write. Rather than pretend
-otherwise, `writ` refuses to auto-approve the effects it cannot reverse, and verifies every
+otherwise, `minos` refuses to auto-approve the effects it cannot reverse, and verifies every
 effect against the **system of record** — never a screenshot.
 
 Checkpointing is a copy-before-write journal over the contract's *declared targets*, so it
@@ -239,7 +239,7 @@ hierarchy is meant to create.
 ## Evaluation
 
 ```bash
-uv run python -m writ.evals
+uv run python -m minos.evals
 ```
 
 15 tasks, binary completion, seeded workspaces. **Six of them are REFUSE tasks** -- goals
@@ -289,7 +289,7 @@ uv run mypy            # strict
 
 ## Prior art
 
-`writ` is an assembly, not an invention. It builds on and borrows from:
+`minos` is an assembly, not an invention. It builds on and borrows from:
 
 - **[Microsoft UFO²](https://github.com/microsoft/UFO)** — the L1→L2→L3 preference
   hierarchy, and its typed office adapters

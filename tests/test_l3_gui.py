@@ -11,15 +11,15 @@ from pathlib import Path
 
 import pytest
 
-from writ.audit import AuditLog
-from writ.broker import Broker
-from writ.checkpoint import FileCheckpointStore
-from writ.router import Router
-from writ.scopes import ScopeSet
-from writ.tiers.l1_system import FilesystemAdapter
-from writ.tiers.l2_adapters import TabularAdapter
-from writ.tiers.l3_gui import CuaDriver, GuiAdapter, StubDriver
-from writ.types import ActionRequest, EffectClass, Tier
+from minos.audit import AuditLog
+from minos.broker import Broker
+from minos.checkpoint import FileCheckpointStore
+from minos.router import Router
+from minos.scopes import ScopeSet
+from minos.tiers.l1_system import FilesystemAdapter
+from minos.tiers.l2_adapters import TabularAdapter
+from minos.tiers.l3_gui import CuaDriver, GuiAdapter, StubDriver
+from minos.types import ActionRequest, EffectClass, Tier
 
 
 @pytest.fixture
@@ -226,7 +226,7 @@ def test_cua_driver_fails_loudly_rather_than_silently(rig):
 
 
 def test_bad_click_params_decline_to_the_router(rig):
-    from writ.router import NoAdapter
+    from minos.router import NoAdapter
 
     _, _, router, _ = rig
     with pytest.raises(NoAdapter, match="declined"):

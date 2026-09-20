@@ -7,8 +7,8 @@ from pathlib import Path
 import pytest
 
 from conftest import make_invocation
-from writ.oracles import FileHashOracle, FileTreeOracle, NullOracle
-from writ.types import ActionRequest, EffectClass, Invocation, Tier
+from minos.oracles import FileHashOracle, FileTreeOracle, NullOracle
+from minos.types import ActionRequest, EffectClass, Invocation, Tier
 
 
 def write(path: Path, text: str) -> None:
@@ -80,7 +80,7 @@ def test_irreversible_always_prompts_even_in_scope(broker, workspace):
 
 
 def test_compensable_requires_a_compensation():
-    from writ.types import EffectContract
+    from minos.types import EffectContract
 
     with pytest.raises(ValueError, match="COMPENSABLE"):
         EffectContract(effect_class=EffectClass.COMPENSABLE)

@@ -1,9 +1,9 @@
-"""writ — a desktop agent runtime where the model asks and the runtime decides.
+"""minos — a desktop agent runtime where the model asks and the runtime decides.
 
 Three invariants hold everything together:
 
-I1  The planner never executes. It emits :class:`~writ.types.ActionRequest`
-    objects; only :class:`~writ.broker.Broker` can act.
+I1  The planner never executes. It emits :class:`~minos.types.ActionRequest`
+    objects; only :class:`~minos.broker.Broker` can act.
 I2  Every tier passes the same gate. An L3 synthetic click is admitted,
     recorded, verified and reversed exactly like an L1 ``unlink()``.
 I3  Degradation is auditable. Falling back L1 -> L2 -> L3 records why.

@@ -1,6 +1,6 @@
 """Planner contract.
 
-A planner turns a goal into a sequence of :class:`~writ.types.ActionRequest`
+A planner turns a goal into a sequence of :class:`~minos.types.ActionRequest`
 objects. It is the **untrusted** component: assume it is injected.
 
 What it is given: the goal, past observations, and a read-only view of its

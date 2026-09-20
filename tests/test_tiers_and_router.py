@@ -11,14 +11,14 @@ from pathlib import Path
 
 import pytest
 
-from writ.audit import AuditLog
-from writ.broker import Broker
-from writ.checkpoint import FileCheckpointStore
-from writ.router import NoAdapter, Router
-from writ.scopes import ScopeSet
-from writ.tiers.base import CapabilityManifest, OperationUnsupported, Preparation
-from writ.tiers.l1_system import FilesystemAdapter, ProcessAdapter
-from writ.types import (
+from minos.audit import AuditLog
+from minos.broker import Broker
+from minos.checkpoint import FileCheckpointStore
+from minos.router import NoAdapter, Router
+from minos.scopes import ScopeSet
+from minos.tiers.base import CapabilityManifest, OperationUnsupported, Preparation
+from minos.tiers.l1_system import FilesystemAdapter, ProcessAdapter
+from minos.types import (
     ActionRequest,
     EffectClass,
     EffectContract,

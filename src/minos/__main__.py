@@ -1,13 +1,13 @@
-"""``writ`` -- the command line.
+"""``minos`` -- the command line.
 
-    writ doctor                                 can this machine run fully offline?
-    writ demo                                   see it work, no API key needed
-    writ run "set Q3 revenue to 48200" -w ./data --allow-write
-    writ eval                                   run the task suite
-    writ audit .writ/audit.jsonl                verify the chain
-    writ index ./data                           build the memory index
-    writ recall "the excel from yesterday"      resolve a vague reference
-    writ skills                                 list stored skills
+    minos doctor                                 can this machine run fully offline?
+    minos demo                                   see it work, no API key needed
+    minos run "set Q3 revenue to 48200" -w ./data --allow-write
+    minos eval                                   run the task suite
+    minos audit .minos/audit.jsonl                verify the chain
+    minos index ./data                           build the memory index
+    minos recall "the excel from yesterday"      resolve a vague reference
+    minos skills                                 list stored skills
 
 Scopes are flags, not configuration buried in a file, and the default is
 read-only. Granting write access should be a thing you typed.
@@ -21,7 +21,7 @@ from pathlib import Path
 
 from . import __version__
 
-DEFAULT_STATE = Path(".writ")
+DEFAULT_STATE = Path(".minos")
 
 _CREDENTIALS_HINT = """
 This looks like missing credentials. Either:
@@ -30,8 +30,8 @@ or:
     ant auth login
 
 To try the runtime without a model or an API key:
-    writ demo
-    writ eval"""
+    minos demo
+    minos eval"""
 
 
 def _looks_like_missing_credentials(exc: BaseException) -> bool:
@@ -39,7 +39,7 @@ def _looks_like_missing_credentials(exc: BaseException) -> bool:
     return "authentication" in text or "api_key" in text or "api key" in text
 
 
-# -- writ run --------------------------------------------------------------
+# -- minos run --------------------------------------------------------------
 
 
 def cmd_run(args: argparse.Namespace) -> int:
@@ -204,7 +204,7 @@ def _planner(args: argparse.Namespace, operations: tuple[str, ...]):  # type: ig
     if offline and choice == "claude":
         raise ImportError(
             "--offline was given but --planner claude would call a remote API. "
-            "Drop --offline, or start a local server (see: writ doctor)."
+            "Drop --offline, or start a local server (see: minos doctor)."
         )
 
     if choice == "auto":
@@ -215,7 +215,7 @@ def _planner(args: argparse.Namespace, operations: tuple[str, ...]):  # type: ig
         elif offline:
             raise ImportError(
                 "--offline was given but no local server is reachable at "
-                f"{args.base_url}.\nRun `writ doctor` to see what is missing."
+                f"{args.base_url}.\nRun `minos doctor` to see what is missing."
             )
         else:
             choice = "claude"
@@ -242,7 +242,7 @@ def _planner(args: argparse.Namespace, operations: tuple[str, ...]):  # type: ig
     return ClaudePlanner(operations=operations, model=args.model or "claude-opus-5")
 
 
-# -- writ demo -------------------------------------------------------------
+# -- minos demo -------------------------------------------------------------
 
 
 def cmd_demo(args: argparse.Namespace) -> int:
@@ -257,7 +257,7 @@ def cmd_demo(args: argparse.Namespace) -> int:
     return 0
 
 
-# -- writ doctor -----------------------------------------------------------
+# -- minos doctor -----------------------------------------------------------
 
 
 def cmd_doctor(args: argparse.Namespace) -> int:
@@ -268,7 +268,7 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     return 0 if report.can_run_offline else 1
 
 
-# -- writ audit ------------------------------------------------------------
+# -- minos audit ------------------------------------------------------------
 
 
 def cmd_audit(args: argparse.Namespace) -> int:
@@ -302,7 +302,7 @@ def cmd_audit(args: argparse.Namespace) -> int:
     return 0 if not breaks else 1
 
 
-# -- writ index / recall ---------------------------------------------------
+# -- minos index / recall ---------------------------------------------------
 
 
 def cmd_index(args: argparse.Namespace) -> int:
@@ -319,7 +319,7 @@ def cmd_recall(args: argparse.Namespace) -> int:
 
     db = Path(args.state).expanduser().resolve() / "memory.db"
     if not db.exists():
-        print(f"error: no memory index at {db}. Run `writ index <dir>` first.", file=sys.stderr)
+        print(f"error: no memory index at {db}. Run `minos index <dir>` first.", file=sys.stderr)
         return 2
     with MemoryStore(db) as memory:
         result = resolve(args.phrase, memory)
@@ -329,7 +329,7 @@ def cmd_recall(args: argparse.Namespace) -> int:
     return 0 if result.best else 1
 
 
-# -- writ skills -----------------------------------------------------------
+# -- minos skills -----------------------------------------------------------
 
 
 def cmd_skills(args: argparse.Namespace) -> int:
@@ -362,7 +362,7 @@ def cmd_skills(args: argparse.Namespace) -> int:
     return 0
 
 
-# -- writ eval -------------------------------------------------------------
+# -- minos eval -------------------------------------------------------------
 
 
 def cmd_eval(args: argparse.Namespace) -> int:
@@ -376,12 +376,12 @@ def cmd_eval(args: argparse.Namespace) -> int:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="writ",
+        prog="minos",
         description="The model asks. The runtime decides.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__,
     )
-    parser.add_argument("--version", action="version", version=f"writ {__version__}")
+    parser.add_argument("--version", action="version", version=f"minos {__version__}")
     sub = parser.add_subparsers(dest="command", required=True)
 
     demo = sub.add_parser("demo", help="run the dry-run/execute/rollback demo")
@@ -460,7 +460,7 @@ def build_parser() -> argparse.ArgumentParser:
     skills.add_argument("--state", default=str(DEFAULT_STATE))
     skills.set_defaults(func=cmd_skills)
 
-    # Listed for `writ --help`; main() delegates before this parser sees it.
+    # Listed for `minos --help`; main() delegates before this parser sees it.
     evaluate = sub.add_parser(
         "eval", help="run the eval suite (accepts the eval module's own flags)"
     )
@@ -473,7 +473,7 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
 
-    # `writ eval --only read.` must reach the eval parser intact. argparse's
+    # `minos eval --only read.` must reach the eval parser intact. argparse's
     # REMAINDER does not capture a leading flag -- the top-level parser claims
     # it first -- so delegate before parsing rather than fighting that.
     if argv and argv[0] == "eval":

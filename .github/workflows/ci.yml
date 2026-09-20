@@ -38,7 +38,7 @@ jobs:
       # measuring anything. Also checks per-task regressions, not just the rate.
       - name: Eval (reference planner)
         run: >
-          uv run --python ${{ matrix.python }} python -m writ.evals
+          uv run --python ${{ matrix.python }} python -m minos.evals
           --baseline eval/baseline-scripted.json
 
   lint:

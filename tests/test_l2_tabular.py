@@ -7,16 +7,16 @@ from pathlib import Path
 
 import pytest
 
-from writ.audit import AuditLog
-from writ.broker import Broker
-from writ.checkpoint import FileCheckpointStore
-from writ.router import NoAdapter, Router
-from writ.scopes import ScopeSet
-from writ.tiers.base import OperationUnsupported
-from writ.tiers.l1_system import FilesystemAdapter
-from writ.tiers.l2_adapters import TabularAdapter
-from writ.tiers.l2_adapters.tabular import CellOracle, cell_ref
-from writ.types import ActionRequest, EffectClass, Tier
+from minos.audit import AuditLog
+from minos.broker import Broker
+from minos.checkpoint import FileCheckpointStore
+from minos.router import NoAdapter, Router
+from minos.scopes import ScopeSet
+from minos.tiers.base import OperationUnsupported
+from minos.tiers.l1_system import FilesystemAdapter
+from minos.tiers.l2_adapters import TabularAdapter
+from minos.tiers.l2_adapters.tabular import CellOracle, cell_ref
+from minos.types import ActionRequest, EffectClass, Tier
 
 SALES = [
     ["Quarter", "Revenue", "Units"],

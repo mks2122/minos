@@ -15,19 +15,19 @@ from typing import Any
 
 import pytest
 
-from writ.agent import Agent, AgentLimits
-from writ.audit import AuditLog
-from writ.broker import Broker
-from writ.checkpoint import FileCheckpointStore
-from writ.planner.base import Done, Observation
-from writ.planner.claude import SYSTEM_PROMPT, ClaudePlanner
-from writ.planner.schemas import operation_for_tool, tool_definitions
-from writ.planner.scripted import CallablePlanner, ScriptedPlanner
-from writ.router import Router
-from writ.scopes import ScopeSet
-from writ.tiers.l1_system import FilesystemAdapter, ProcessAdapter
-from writ.tiers.l2_adapters import TabularAdapter
-from writ.types import ActionRequest
+from minos.agent import Agent, AgentLimits
+from minos.audit import AuditLog
+from minos.broker import Broker
+from minos.checkpoint import FileCheckpointStore
+from minos.planner.base import Done, Observation
+from minos.planner.claude import SYSTEM_PROMPT, ClaudePlanner
+from minos.planner.schemas import operation_for_tool, tool_definitions
+from minos.planner.scripted import CallablePlanner, ScriptedPlanner
+from minos.router import Router
+from minos.scopes import ScopeSet
+from minos.tiers.l1_system import FilesystemAdapter, ProcessAdapter
+from minos.tiers.l2_adapters import TabularAdapter
+from minos.types import ActionRequest
 
 SALES = [
     ["Quarter", "Revenue", "Units"],
@@ -420,7 +420,7 @@ def test_claude_planner_does_not_use_the_sdk_tool_runner():
     The Tool Runner executes tool functions and loops. Reaching for it would
     hand execution back into the model's turn and quietly dissolve I1.
     """
-    module = Path(__file__).resolve().parent.parent / "src" / "writ" / "planner" / "claude.py"
+    module = Path(__file__).resolve().parent.parent / "src" / "minos" / "planner" / "claude.py"
     text = module.read_text(encoding="utf-8")
 
     # Mentioning it in the docstring is the point; calling it is the bug.
@@ -434,7 +434,7 @@ def test_claude_planner_does_not_use_the_sdk_tool_runner():
 
 def test_openai_tool_translation_preserves_the_schema():
     """Schemas are authored once, in Anthropic's shape, and translated."""
-    from writ.planner.local import to_openai_tools
+    from minos.planner.local import to_openai_tools
 
     translated = to_openai_tools(tool_definitions(("sheet.set_cell",)))
     by_name = {t["function"]["name"]: t for t in translated}
@@ -451,7 +451,7 @@ SET_CELL_ARGS = '{"path": "/ws/a.csv", "cell": "B4", "value": "1"}'
 
 
 def test_local_planner_translates_a_tool_call(monkeypatch):
-    from writ.planner.local import LocalPlanner
+    from minos.planner.local import LocalPlanner
 
     planner = LocalPlanner(operations=("sheet.set_cell",), model="qwen3:8b")
     monkeypatch.setattr(
@@ -486,7 +486,7 @@ def test_local_planner_translates_a_tool_call(monkeypatch):
 
 def test_local_planner_takes_only_the_first_of_several_calls(monkeypatch):
     """Small models batch tool calls. Half-running a batch is worse than one call."""
-    from writ.planner.local import LocalPlanner
+    from minos.planner.local import LocalPlanner
 
     planner = LocalPlanner(operations=("fs.read", "fs.write"))
     monkeypatch.setattr(
@@ -522,7 +522,7 @@ def test_local_planner_takes_only_the_first_of_several_calls(monkeypatch):
 
 def test_local_planner_fails_closed_on_malformed_json(monkeypatch):
     """Bad arguments become empty params, which the broker denies for lack of a subject."""
-    from writ.planner.local import LocalPlanner
+    from minos.planner.local import LocalPlanner
 
     planner = LocalPlanner(operations=("fs.read",))
     monkeypatch.setattr(
@@ -547,7 +547,7 @@ def test_local_planner_fails_closed_on_malformed_json(monkeypatch):
 
 
 def test_local_planner_handles_prose_instead_of_a_tool_call(monkeypatch):
-    from writ.planner.local import LocalPlanner
+    from minos.planner.local import LocalPlanner
 
     planner = LocalPlanner(operations=("fs.read",))
     monkeypatch.setattr(
@@ -568,7 +568,7 @@ def test_local_planner_handles_prose_instead_of_a_tool_call(monkeypatch):
 def test_local_planner_explains_a_dead_server(monkeypatch):
     import urllib.error
 
-    from writ.planner.local import LocalPlanner
+    from minos.planner.local import LocalPlanner
 
     planner = LocalPlanner(operations=("fs.read",), base_url="http://localhost:1/v1")
 
@@ -583,7 +583,7 @@ def test_local_planner_explains_a_dead_server(monkeypatch):
 
 
 def test_local_planner_tells_the_model_it_is_small(monkeypatch):
-    from writ.planner.local import LOCAL_SYSTEM_SUFFIX, LocalPlanner
+    from minos.planner.local import LOCAL_SYSTEM_SUFFIX, LocalPlanner
 
     planner = LocalPlanner(operations=("fs.read",))
     monkeypatch.setattr(planner, "_post", lambda: {"choices": [{"message": {"content": "hm"}}]})

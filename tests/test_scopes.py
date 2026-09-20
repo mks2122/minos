@@ -10,7 +10,7 @@ import os
 
 import pytest
 
-from writ.scopes import Scope, ScopeSet, ScopeViolation
+from minos.scopes import Scope, ScopeSet, ScopeViolation
 
 
 def test_parse_basic():

@@ -36,7 +36,7 @@ thinking badly, it is not doing the thinking twice.
 
 Measure it rather than trusting this docstring::
 
-    writ eval --planner local --model qwen3:8b
+    minos eval --planner local --model qwen3:8b
 """
 
 from __future__ import annotations

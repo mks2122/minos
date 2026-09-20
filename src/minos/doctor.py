@@ -1,4 +1,4 @@
-"""``writ doctor`` -- can this machine run fully offline?
+"""``minos doctor`` -- can this machine run fully offline?
 
 Answers one question with evidence rather than encouragement: is everything
 needed to run without a network present, and if not, exactly what is missing.
@@ -217,7 +217,7 @@ def diagnose(base_url: str = DEFAULT_URL) -> Report:
 
 
 def render(report: Report) -> str:
-    lines = ["", "writ doctor -- can this machine run fully offline?", "=" * 62, ""]
+    lines = ["", "minos doctor -- can this machine run fully offline?", "=" * 62, ""]
     lines.append(f"  platform   : {report.platform}  (python {report.python})")
     for name, vram in report.gpus or [("no NVIDIA GPU detected", 0.0)]:
         lines.append(f"  gpu        : {name}" + (f"  --  {vram} GB VRAM" if vram else ""))

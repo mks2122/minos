@@ -1,6 +1,6 @@
 """Adapter contract shared by every tier.
 
-An adapter turns an :class:`~writ.types.ActionRequest` into a
+An adapter turns an :class:`~minos.types.ActionRequest` into a
 :class:`Preparation`: the effect contract that declares what will change, the
 exact grants required, and a callable that performs it.
 

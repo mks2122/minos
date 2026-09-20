@@ -172,7 +172,7 @@ class EvalReport:
     def text(self) -> str:
         lines = [
             "",
-            f"writ eval -- planner={self.planner_name} model={self.model}",
+            f"minos eval -- planner={self.planner_name} model={self.model}",
             "=" * 68,
             "",
         ]

@@ -15,7 +15,7 @@ import pathlib
 
 import pytest
 
-SRC = pathlib.Path(__file__).resolve().parent.parent / "src" / "writ"
+SRC = pathlib.Path(__file__).resolve().parent.parent / "src" / "minos"
 EXAMPLES = pathlib.Path(__file__).resolve().parent.parent / "examples"
 
 

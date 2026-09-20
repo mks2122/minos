@@ -127,5 +127,5 @@ two-argument operations (`source` *and* `path`) than single-argument ones.
 Reproduce:
 
 ```bash
-uv run writ eval --planner local --model qwen3:8b
+uv run minos eval --planner local --model qwen3:8b
 ```

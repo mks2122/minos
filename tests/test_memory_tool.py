@@ -15,16 +15,16 @@ from pathlib import Path
 
 import pytest
 
-from writ.audit import AuditLog
-from writ.broker import Broker
-from writ.checkpoint import FileCheckpointStore
-from writ.memory import MemoryStore
-from writ.planner.schemas import operation_for_tool, tool_definitions
-from writ.router import Router
-from writ.scopes import ScopeSet
-from writ.tiers.l1_system import FilesystemAdapter, MemoryAdapter
-from writ.tiers.l2_adapters import TabularAdapter
-from writ.types import ActionRequest, EffectClass, Tier
+from minos.audit import AuditLog
+from minos.broker import Broker
+from minos.checkpoint import FileCheckpointStore
+from minos.memory import MemoryStore
+from minos.planner.schemas import operation_for_tool, tool_definitions
+from minos.router import Router
+from minos.scopes import ScopeSet
+from minos.tiers.l1_system import FilesystemAdapter, MemoryAdapter
+from minos.tiers.l2_adapters import TabularAdapter
+from minos.types import ActionRequest, EffectClass, Tier
 
 DAY = 86_400.0
 
@@ -153,7 +153,7 @@ def test_recall_on_nothing_matching(rig):
 
 
 def test_recall_without_a_phrase_declines(rig):
-    from writ.router import NoAdapter
+    from minos.router import NoAdapter
 
     _, _, _, router, _ = rig
     with pytest.raises(NoAdapter, match="declined"):

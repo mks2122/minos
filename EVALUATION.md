@@ -1,10 +1,10 @@
 # Evaluation
 
 ```bash
-uv run python -m writ.evals                                  # reference solutions
-uv run python -m writ.evals --json out.json                  # machine-readable
-uv run python -m writ.evals --baseline eval/baseline-scripted.json
-uv run python -m writ.evals --planner claude                 # needs an API key
+uv run python -m minos.evals                                  # reference solutions
+uv run python -m minos.evals --json out.json                  # machine-readable
+uv run python -m minos.evals --baseline eval/baseline-scripted.json
+uv run python -m minos.evals --planner claude                 # needs an API key
 ```
 
 ---

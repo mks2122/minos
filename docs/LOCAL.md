@@ -3,7 +3,7 @@
 **Yes, this runs entirely on your machine with a quantised model, and it is not slow.**
 
 ```bash
-uv run writ doctor      # what's missing, sized to your GPU
+uv run minos doctor      # what's missing, sized to your GPU
 ```
 
 ---
@@ -23,11 +23,11 @@ ollama pull qwen3:8b
 uv run python main.py             # auto-detects the server and uses it
 ```
 
-`writ doctor` should now say **FULLY OFFLINE: YES**.
+`minos doctor` should now say **FULLY OFFLINE: YES**.
 
 > **If step 2 says `ollama` is not recognised**, the installer put it in
 > `%LOCALAPPDATA%\Programs\Ollama` and your open terminal has not picked that
-> up. Open a new terminal, or call it by full path. `writ doctor` looks in that
+> up. Open a new terminal, or call it by full path. `minos doctor` looks in that
 > location itself, so it will still report the runner correctly.
 
 To make that a guarantee rather than a preference, turn on offline mode — Settings (8) → option 9, or `--offline` on the CLI. It then **fails rather than calling a remote model**, so there is no path where something quietly leaves the machine.
@@ -40,7 +40,7 @@ This is the part that surprised me, and it is worth understanding before picking
 
 Published numbers make local models look hopeless at desktop work — a 32B scoring single digits on OSWorld. **Those numbers are about GUI agents**: look at a screenshot, find a control, click the right pixel, repeat fifty times. Pixel-driving is genuinely hard and small models are genuinely bad at it.
 
-That is not the job in this runtime. `writ` prefers typed tools, so the planner's task is to choose one of about a dozen functions and fill in its arguments:
+That is not the job in this runtime. `minos` prefers typed tools, so the planner's task is to choose one of about a dozen functions and fill in its arguments:
 
 ```
 sheet.set_cell(path="data/sales_2025.csv", cell="B4", value="48200")
@@ -52,7 +52,7 @@ That is **tool calling**. A 7–8B model does it competently. The tier hierarchy
 
 ## Picking a model
 
-`writ doctor` reads your actual VRAM and lists what fits. Sizes are Q4_K_M weights; leave ~1 GB for the KV cache.
+`minos doctor` reads your actual VRAM and lists what fits. Sizes are Q4_K_M weights; leave ~1 GB for the KV cache.
 
 | Model | Weights | Needs | Notes |
 |---|---|---|---|
@@ -73,7 +73,7 @@ llama.cpp keeps most weights in system RAM and still serves an OpenAI-compatible
 
 ```bash
 llama-server -m qwen3-32b-q4_k_m.gguf --n-gpu-layers 20 --port 11434
-uv run writ run "..." --planner local --base-url http://localhost:11434/v1 --offline
+uv run minos run "..." --planner local --base-url http://localhost:11434/v1 --offline
 ```
 
 Expect single-digit tokens/sec. **That is usable here**, because a tool call is short — a five-step task is maybe 30 seconds of generation. This is exactly where the typed-tier architecture pays off: a GUI agent needing hundreds of screenshot-sized steps would be unusable at the same speed.
@@ -95,10 +95,10 @@ If you want the layer-offload idea to actually pay, the axis is **sparsity, not 
 ## Measure it, don't trust this page
 
 ```bash
-uv run writ eval --planner local --model qwen3:8b
+uv run minos eval --planner local --model qwen3:8b
 ```
 
-Fifteen tasks, binary pass/fail, including six containment tasks. You will get your own number for your own hardware. Compare against the reference planner (`uv run writ eval`) which proves the tasks are solvable at all.
+Fifteen tasks, binary pass/fail, including six containment tasks. You will get your own number for your own hardware. Compare against the reference planner (`uv run minos eval`) which proves the tasks are solvable at all.
 
 Expect the local planner to do worse than the reference on multi-step tasks and fine on short ones. **Where it fails, the failure is safe**: scopes bound what a confused planner can reach, every effect is verified against the system of record, and anything that doesn't match gets reversed.
 
@@ -109,7 +109,7 @@ Expect the local planner to do worse than the reference on multi-step tasks and 
 Once a task succeeds and is promoted to a verified skill, replay makes **zero model calls** — local or remote:
 
 ```bash
-uv run writ skills            # what has been promoted
+uv run minos skills            # what has been promoted
 ```
 
 A cached skill is faster and more reliable than any planner, because it isn't planning. The way to run this cheaply is not a smaller model doing the same thinking badly; it is not doing the thinking twice.

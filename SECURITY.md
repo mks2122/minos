@@ -10,7 +10,7 @@
 
 Indirect prompt injection is unsolved. A document, a web page, a filename or a tool result can carry instructions the planner will follow. Attack success rates of 50–84% are routine in the literature, and the failure mode became RCE-class in 2026.
 
-`writ` does not try to make the planner immune — nobody has managed that. It makes the planner's compromise **survivable**, by ensuring it cannot do anything it was not already scoped to do before the task began.
+`minos` does not try to make the planner immune — nobody has managed that. It makes the planner's compromise **survivable**, by ensuring it cannot do anything it was not already scoped to do before the task began.
 
 That is a narrower claim than "secure", and it is deliberately narrower.
 
