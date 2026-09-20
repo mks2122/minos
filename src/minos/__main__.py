@@ -20,6 +20,7 @@ from __future__ import annotations
 import argparse
 import sys
 from pathlib import Path
+from typing import Any
 
 from . import __version__
 
@@ -52,6 +53,7 @@ def cmd_run(args: argparse.Namespace) -> int:
     from .memory import FileWatcher, MemoryStore
     from .router import Router
     from .scopes import ScopeSet
+    from .tiers.base import Adapter
     from .tiers.l1_system import (
         AppAdapter,
         FilesystemAdapter,
@@ -60,6 +62,7 @@ def cmd_run(args: argparse.Namespace) -> int:
     )
     from .tiers.l2_adapters import TabularAdapter
     from .tiers.l2_code import CodeAdapter
+    from .tiers.l3_gui import GuiAdapter
 
     workspace = Path(args.workspace).expanduser().resolve()
     if not workspace.is_dir():
@@ -80,8 +83,11 @@ def cmd_run(args: argparse.Namespace) -> int:
         scopes.append(f"fs.delete:{workspace}/**")
     if args.allow_open:
         scopes.append(f"app.open:{workspace}/**")
+    if args.allow_gui:
+        # The virtual device drives the real desktop. Never implicit.
+        scopes.append("ui.input:*")
 
-    operations = (
+    operations: tuple[str, ...] = (
         "fs.read",
         "fs.list",
         "fs.stat",
@@ -100,6 +106,8 @@ def cmd_run(args: argparse.Namespace) -> int:
         "code.run",
         "code.materialize",
     )
+    if args.allow_gui:
+        operations += ("ui.click", "ui.type", "ui.key", "ui.screenshot")
 
     # Index the workspace so "the excel from yesterday" has something to
     # resolve against. Scoped to the workspace, so memory never learns about
@@ -121,6 +129,18 @@ def cmd_run(args: argparse.Namespace) -> int:
         print(f"error: {exc}", file=sys.stderr)
         return 2
 
+    gui_adapters: tuple[Adapter, ...] = ()
+    panic: Any = None
+    if args.allow_gui:
+        from .tiers.l3_gui import PanicAbort, WindowsDriver, panic_watcher  # noqa: F401
+
+        try:
+            panic = panic_watcher()
+            gui_adapters = (GuiAdapter(driver=WindowsDriver(panic=panic)),)
+        except RuntimeError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 2
+
     broker = Broker(
         scopes=ScopeSet.parse(scopes),
         audit=AuditLog(state / "audit.jsonl"),
@@ -138,6 +158,7 @@ def cmd_run(args: argparse.Namespace) -> int:
                 ProcessAdapter(),
                 TabularAdapter(),
                 CodeAdapter(state=state),
+                *gui_adapters,
             )
         ),
         broker=broker,
@@ -156,7 +177,14 @@ def cmd_run(args: argparse.Namespace) -> int:
     print()
 
     try:
-        trajectory = agent.run(args.goal, goal_id="cli")
+        if panic is not None:
+            print("  !! the agent will use your real mouse and keyboard.")
+            print("     press Ctrl+Alt+Esc to abort and release input.")
+            print()
+            with panic:
+                trajectory = agent.run(args.goal, goal_id="cli")
+        else:
+            trajectory = agent.run(args.goal, goal_id="cli")
     except Exception as exc:
         print(f"\nthe planner failed: {type(exc).__name__}: {exc}", file=sys.stderr)
         if _looks_like_missing_credentials(exc):
@@ -521,6 +549,14 @@ def build_parser() -> argparse.ArgumentParser:
         "--offline",
         action="store_true",
         help="refuse to use a remote model; fail instead of reaching the network",
+    )
+    run.add_argument(
+        "--allow-gui",
+        action="store_true",
+        help=(
+            "let the agent use your real mouse and keyboard. It shares your "
+            "desktop and takes the cursor; Ctrl+Alt+Esc aborts."
+        ),
     )
     run.add_argument("--state", default=str(DEFAULT_STATE))
     run.add_argument(
