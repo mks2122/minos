@@ -28,7 +28,7 @@ from .types import ActionRequest, Invocation, Tier
 
 __all__ = ["NoAdapter", "Routed", "Router", "RoutingStats"]
 
-_TIER_ORDER = {Tier.L1_SYSTEM: 0, Tier.L2_ADAPTER: 1, Tier.L3_GUI: 2}
+_TIER_ORDER = {Tier.L1_SYSTEM: 0, Tier.L2_ADAPTER: 1, Tier.L2_CODE: 2, Tier.L3_GUI: 3}
 
 
 class NoAdapter(Exception):
@@ -81,6 +81,7 @@ class RoutingStats:
             "total": self.total,
             "L1": self.routed.get(Tier.L1_SYSTEM, 0),
             "L2": self.routed.get(Tier.L2_ADAPTER, 0),
+            "L2.5": self.routed.get(Tier.L2_CODE, 0),
             "L3": self.routed.get(Tier.L3_GUI, 0),
             "fallback_rate": round(self.fallback_rate, 4),
             "gui_rate": round(self.gui_rate, 4),
