@@ -513,6 +513,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="refuse to use a remote model; fail instead of reaching the network",
     )
     run.add_argument("--state", default=str(DEFAULT_STATE))
+    run.add_argument(
+        "--wait",
+        type=float,
+        default=0.0,
+        help="seconds to wait for another minos process to finish (default: fail)",
+    )
     run.set_defaults(func=cmd_run)
 
     doctor = sub.add_parser("doctor", help="can this machine run fully offline?")
@@ -536,6 +542,7 @@ def build_parser() -> argparse.ArgumentParser:
     undo.add_argument("--yes", action="store_true", help="skip the confirmation prompt")
     undo.add_argument("-n", "--tail", type=int, default=20)
     undo.add_argument("--state", default=str(DEFAULT_STATE))
+    undo.add_argument("--wait", type=float, default=0.0)
     undo.set_defaults(func=cmd_undo)
 
     index = sub.add_parser("index", help="index a directory into memory")
@@ -575,10 +582,27 @@ def main(argv: list[str] | None = None) -> int:
         return eval_main(argv[1:])
 
     args = build_parser().parse_args(argv)
+    state = getattr(args, "state", None)
+    if state is None:
+        # Read-only commands (audit, doctor, recall) take no state directory and
+        # need no lock.
+        return int(args.func(args))
+
+    from .locking import LockBusy, lock_state
+
+    try:
+        lock = lock_state(state, timeout=getattr(args, "wait", 0.0))
+        lock.acquire()
+    except LockBusy as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        print("       `minos <command> --wait 60` waits instead of failing.", file=sys.stderr)
+        return 2
+
     try:
         return int(args.func(args))
     finally:
-        _apply_retention(getattr(args, "state", None))
+        _apply_retention(state)
+        lock.release()
 
 
 def _apply_retention(state: str | None) -> None:
