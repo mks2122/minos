@@ -121,6 +121,52 @@ _SCHEMAS: dict[str, dict[str, Any]] = {
         {"path": _PATH},
         ["path"],
     ),
+    "code.run": _tool(
+        "code_run",
+        (
+            "Write and run Python in a sandbox. Use this whenever there is no "
+            "typed tool for the job -- converting between file formats, parsing, "
+            "reshaping data, bulk renaming, anything computational. This is "
+            "almost always better than giving up or clicking. "
+            "The script starts in a workspace containing 'materials/' (read-only "
+            "copies of the files you listed) and 'out/' (already created). "
+            "Write results to 'out/'; only files there can be saved afterwards "
+            "with code_materialize. Nothing you write elsewhere reaches the "
+            "user's machine. "
+            "There is NO network access. Only the Python standard library and "
+            "the preinstalled packages are importable."
+        ),
+        {
+            "code": {
+                "type": "string",
+                "description": "Python source. Write output files into 'out/'.",
+            },
+            "materials": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": (
+                    "Absolute paths to copy into 'materials/'. Must be within your fs.read scopes."
+                ),
+            },
+        },
+        ["code", "materials"],
+    ),
+    "code.materialize": _tool(
+        "code_materialize",
+        (
+            "Save a file the sandbox produced onto the real filesystem. This is "
+            "the only way sandbox output reaches the user, and it is an ordinary "
+            "write: it is checkpointed, verified and undoable."
+        ),
+        {
+            "artifact": {
+                "type": "string",
+                "description": "Path within 'out/', e.g. 'report.docx'.",
+            },
+            "path": _PATH,
+        },
+        ["artifact", "path"],
+    ),
     "memory.recall": _tool(
         "memory_recall",
         (
@@ -175,7 +221,24 @@ def tool_definitions(operations: tuple[str, ...]) -> list[dict[str, Any]]:
     support.
     """
     tools = [_SCHEMAS[op] for op in operations if op in _SCHEMAS]
-    return [*tools, FINISH_TOOL]
+    return [*(_with_live_detail(tool) for tool in tools), FINISH_TOOL]
+
+
+def _with_live_detail(tool: dict[str, Any]) -> dict[str, Any]:
+    """Append facts that are only knowable at runtime.
+
+    The sandbox's package roster is the motivating case. A model told nothing
+    will assume ``requests`` exists and write a script that fails; a model told
+    ``pypdf`` is present writes a better one. That belongs in the description
+    the model actually reads, not in a README.
+    """
+    if tool["name"] != "code_run":
+        return tool
+
+    from ..sandbox import describe_for_planner
+
+    detail = describe_for_planner()
+    return {**tool, "description": f"{tool['description']}\n{detail}"}
 
 
 def operation_for_tool(tool_name: str) -> str | None:

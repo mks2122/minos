@@ -16,14 +16,28 @@ does and does not enforce.
 
 from __future__ import annotations
 
+from .packages import (
+    RECOMMENDED,
+    PackageStatus,
+    available_packages,
+    describe_for_planner,
+    missing_import,
+    survey,
+)
 from .runner import CodeResult, SandboxBackend, SubprocessSandbox, scrubbed_environment
 from .workspace import Artifact, Workspace
 
 __all__ = [
+    "RECOMMENDED",
     "Artifact",
     "CodeResult",
+    "PackageStatus",
     "SandboxBackend",
     "SubprocessSandbox",
     "Workspace",
+    "available_packages",
+    "describe_for_planner",
+    "missing_import",
     "scrubbed_environment",
+    "survey",
 ]

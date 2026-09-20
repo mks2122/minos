@@ -29,12 +29,18 @@ against the output directory and refused if it escapes.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
 from ...oracles import FileHashOracle, NullOracle
-from ...sandbox import CodeResult, SandboxBackend, SubprocessSandbox, Workspace
+from ...sandbox import (
+    CodeResult,
+    SandboxBackend,
+    SubprocessSandbox,
+    Workspace,
+    missing_import,
+)
 from ...types import ActionRequest, EffectClass, EffectContract, Grant, Invocation, Tier
 from ..base import CapabilityManifest, OperationUnsupported, Preparation
 
@@ -96,6 +102,18 @@ class CodeAdapter:
             for material in materials:
                 workspace.add_material(Path(material))
             result: CodeResult = self.backend.run(workspace, str(code), timeout=timeout)
+            if not result.ok:
+                # A traceback is a worse answer than the name of the thing to
+                # install, and the runtime knows which import failed.
+                wanted = missing_import(result.stderr)
+                if wanted is not None:
+                    result = replace(
+                        result,
+                        detail=(
+                            f"{wanted.distribution} is not installed in the sandbox "
+                            f"({wanted.purpose}). Install it with: {wanted.install_hint}"
+                        ),
+                    )
             return result
 
         return Preparation(

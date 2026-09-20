@@ -59,13 +59,21 @@ def cmd_run(args: argparse.Namespace) -> int:
         ProcessAdapter,
     )
     from .tiers.l2_adapters import TabularAdapter
+    from .tiers.l2_code import CodeAdapter
 
     workspace = Path(args.workspace).expanduser().resolve()
     if not workspace.is_dir():
         print(f"error: {workspace} is not a directory", file=sys.stderr)
         return 2
 
-    scopes = [f"fs.read:{workspace}/**", f"memory.read:{workspace}/**"]
+    state = Path(args.state).expanduser().resolve()
+    # code.run is granted by default: the sandbox reaches nothing the user
+    # owns, and its output still needs fs.write to go anywhere.
+    scopes = [
+        f"fs.read:{workspace}/**",
+        f"memory.read:{workspace}/**",
+        f"code.run:{state}/**",
+    ]
     if args.allow_write:
         scopes.append(f"fs.write:{workspace}/**")
     if args.allow_delete:
@@ -73,7 +81,6 @@ def cmd_run(args: argparse.Namespace) -> int:
     if args.allow_open:
         scopes.append(f"app.open:{workspace}/**")
 
-    state = Path(args.state).expanduser().resolve()
     operations = (
         "fs.read",
         "fs.list",
@@ -90,6 +97,8 @@ def cmd_run(args: argparse.Namespace) -> int:
         "memory.recall",
         "memory.recent",
         "app.open",
+        "code.run",
+        "code.materialize",
     )
 
     # Index the workspace so "the excel from yesterday" has something to
@@ -128,6 +137,7 @@ def cmd_run(args: argparse.Namespace) -> int:
                 MemoryAdapter(memory, roots=(workspace,)),
                 ProcessAdapter(),
                 TabularAdapter(),
+                CodeAdapter(state=state),
             )
         ),
         broker=broker,
