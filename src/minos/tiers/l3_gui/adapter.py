@@ -110,6 +110,10 @@ class GuiAdapter:
             )
 
         if op == "ui.click":
+            element = request.params.get("element")
+            if element:
+                return self._grounded_click(request, str(element), oracle, window)
+
             x, y = _coords(request.params)
 
             def click(_: Invocation) -> None:
@@ -141,6 +145,57 @@ class GuiAdapter:
             self.driver.key(str(chord))
 
         return self._acting(request, key, oracle, window, f"press {chord} in {window}")
+
+    # -- grounding ---------------------------------------------------------
+
+    def _grounded_click(
+        self, request: ActionRequest, element: str, oracle: ScreenOracle, window: str
+    ) -> Preparation:
+        """Click a control by name rather than by coordinate.
+
+        Resolution happens at *execute* time, not here: the tree is live, and a
+        control located during planning may have moved or closed by the time the
+        broker admits the action. Resolving late is the difference between
+        clicking the button and clicking where the button used to be.
+        """
+
+        def click(_: Invocation) -> dict[str, Any]:
+            from .uia import AmbiguousElement, ElementNotFound, UiaTree, available
+
+            button = str(request.params.get("button", "left"))
+            if not available():
+                raise OperationUnsupported(
+                    f"cannot click {element!r} by name: UI Automation is "
+                    "unavailable (uv pip install comtypes). Pass x and y to "
+                    "click by coordinate instead."
+                )
+
+            tree = UiaTree()
+            try:
+                found = tree.find(element)
+            except AmbiguousElement:
+                # Two buttons named Save is a question, not a coin flip. This is
+                # how an agent clicks "Don't Save".
+                raise
+            except ElementNotFound:
+                raise
+
+            if button == "left" and tree.invoke(found):
+                # Invoked through the accessibility layer: the physical cursor
+                # never moved, so the user can keep working.
+                return {"element": found.describe(), "method": "invoke"}
+
+            x, y = found.centre
+            self.driver.click(x, y, button)
+            return {"element": found.describe(), "method": "click", "at": [x, y]}
+
+        return self._acting(
+            request,
+            click,
+            oracle,
+            window,
+            f"click the control named {element!r} in {window}",
+        )
 
     # -- helper ------------------------------------------------------------
 
