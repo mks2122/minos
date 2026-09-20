@@ -216,6 +216,31 @@ def diagnose(base_url: str = DEFAULT_URL) -> Report:
 # -- output ----------------------------------------------------------------
 
 
+def _sandbox_section() -> list[str]:
+    """What the sandbox can import, and what it cannot.
+
+    The sandbox has no network by design, so the set of usable packages is
+    decided before a task runs rather than during it. Someone whose PDF
+    conversion just failed needs to see this, not go looking for it.
+    """
+    from .sandbox import survey
+
+    statuses = survey()
+    have = [s for s in statuses if s.available]
+    missing = [s for s in statuses if not s.available]
+
+    lines = ["", f"  sandbox    : offline, {len(have)}/{len(statuses)} recommended packages"]
+    if have:
+        lines.append(f"    available: {', '.join(sorted(s.module for s in have))}")
+    if missing:
+        # Three is enough to make the point without turning doctor into a wall.
+        shown = ", ".join(s.distribution for s in missing[:6])
+        more = f" (+{len(missing) - 6} more)" if len(missing) > 6 else ""
+        lines.append(f"    missing  : {shown}{more}")
+        lines.append(f"    install  : uv pip install {' '.join(s.distribution for s in missing)}")
+    return lines
+
+
 def render(report: Report) -> str:
     lines = ["", "minos doctor -- can this machine run fully offline?", "=" * 62, ""]
     lines.append(f"  platform   : {report.platform}  (python {report.python})")
@@ -231,6 +256,8 @@ def render(report: Report) -> str:
     )
     if report.installed_models:
         lines.append(f"  models     : {', '.join(report.installed_models)}")
+
+    lines += _sandbox_section()
 
     lines += [
         "",
