@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Any
 
 from . import __version__
+from .config import settings
 
 DEFAULT_STATE = Path(".minos")
 
@@ -239,7 +240,10 @@ def cmd_run(args: argparse.Namespace) -> int:
 
 def _planner(args: argparse.Namespace, operations: tuple[str, ...]):  # type: ignore[no-untyped-def]
     choice = args.planner
-    offline = getattr(args, "offline", False)
+    cfg = settings()
+    # MINOS_OFFLINE makes local a guarantee without having to remember the flag
+    # on every invocation; --offline still forces it on.
+    offline = getattr(args, "offline", False) or cfg.offline
 
     if offline and choice == "claude":
         raise ImportError(
@@ -267,7 +271,7 @@ def _planner(args: argparse.Namespace, operations: tuple[str, ...]):  # type: ig
         return LocalPlanner(
             operations=operations,
             base_url=args.base_url,
-            model=args.model or "qwen3:8b",
+            model=args.model or cfg.model,
         )
     if choice != "claude":
         raise ImportError(f"unknown planner {choice!r}")
@@ -279,7 +283,7 @@ def _planner(args: argparse.Namespace, operations: tuple[str, ...]):  # type: ig
             "    uv sync --extra claude\n"
             "and credentials in ANTHROPIC_API_KEY (or `ant auth login`)."
         ) from exc
-    return ClaudePlanner(operations=operations, model=args.model or "claude-opus-5")
+    return ClaudePlanner(operations=operations, model=args.model or cfg.remote_model)
 
 
 # -- minos demo -------------------------------------------------------------
@@ -493,6 +497,10 @@ def cmd_eval(args: argparse.Namespace) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
+    # Environment and .env supply the defaults; a typed flag overrides them,
+    # because a flag someone typed is the most specific intent available.
+    cfg = settings()
+
     parser = argparse.ArgumentParser(
         prog="minos",
         description="The model asks. The runtime decides.",
@@ -518,21 +526,21 @@ def build_parser() -> argparse.ArgumentParser:
     )
     run.add_argument(
         "--planner",
-        default="auto",
+        default=cfg.planner,
         choices=["auto", "local", "claude"],
-        help="auto prefers a local server when one is listening",
+        help=f"auto prefers a local server when one is listening (MINOS_PLANNER={cfg.planner})",
     )
     run.add_argument(
         "--base-url",
-        default="http://localhost:11434/v1",
-        help="OpenAI-compatible endpoint for --planner local (Ollama, LM Studio, ...)",
+        default=cfg.base_url,
+        help=f"OpenAI-compatible endpoint: Ollama, LM Studio, ... (MINOS_BASE_URL={cfg.base_url})",
     )
     run.add_argument(
         "--model",
         default=None,
-        help="defaults to qwen3:8b for local, claude-opus-5 for claude",
+        help=f"MINOS_MODEL={cfg.model} for local, MINOS_REMOTE_MODEL={cfg.remote_model} for claude",
     )
-    run.add_argument("--max-steps", type=int, default=20)
+    run.add_argument("--max-steps", type=int, default=cfg.max_steps)
     run.add_argument(
         "--allow-open",
         action="store_true",
@@ -548,7 +556,9 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument(
         "--offline",
         action="store_true",
-        help="refuse to use a remote model; fail instead of reaching the network",
+        default=cfg.offline,
+        help="refuse to use a remote model; fail instead of reaching the network"
+        + (" (MINOS_OFFLINE is set)" if cfg.offline else ""),
     )
     run.add_argument(
         "--allow-gui",
@@ -558,7 +568,7 @@ def build_parser() -> argparse.ArgumentParser:
             "desktop and takes the cursor; Ctrl+Alt+Esc aborts."
         ),
     )
-    run.add_argument("--state", default=str(DEFAULT_STATE))
+    run.add_argument("--state", default=cfg.state)
     run.add_argument(
         "--wait",
         type=float,
@@ -568,11 +578,11 @@ def build_parser() -> argparse.ArgumentParser:
     run.set_defaults(func=cmd_run)
 
     doctor = sub.add_parser("doctor", help="can this machine run fully offline?")
-    doctor.add_argument("--base-url", default="http://localhost:11434/v1")
+    doctor.add_argument("--base-url", default=cfg.base_url)
     doctor.set_defaults(func=cmd_doctor)
 
     audit = sub.add_parser("audit", help="verify and print an audit chain")
-    audit.add_argument("path", nargs="?", default=str(DEFAULT_STATE / "audit.jsonl"))
+    audit.add_argument("path", nargs="?", default=str(Path(cfg.state) / "audit.jsonl"))
     audit.add_argument("-n", "--tail", type=int, default=20)
     audit.add_argument("-v", "--verbose", action="store_true")
     audit.set_defaults(func=cmd_audit)
@@ -587,7 +597,7 @@ def build_parser() -> argparse.ArgumentParser:
     undo.add_argument("--last", action="store_true", help="undo the most recent action")
     undo.add_argument("--yes", action="store_true", help="skip the confirmation prompt")
     undo.add_argument("-n", "--tail", type=int, default=20)
-    undo.add_argument("--state", default=str(DEFAULT_STATE))
+    undo.add_argument("--state", default=cfg.state)
     undo.add_argument("--wait", type=float, default=0.0)
     undo.set_defaults(func=cmd_undo)
 
@@ -652,7 +662,7 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _apply_retention(state: str | None) -> None:
-    """Keep 7 days or 2 GB of checkpoints, whichever binds first.
+    """Apply the retention policy from MINOS_CHECKPOINT_DAYS / _GB.
 
     Runs on the way out so it never delays the command, and never raises: a
     failure to tidy up must not turn a successful action into a failed one.
@@ -665,7 +675,11 @@ def _apply_retention(state: str | None) -> None:
     try:
         from .checkpoint import FileCheckpointStore
 
-        FileCheckpointStore(checkpoints).prune(max_age_days=7.0, max_bytes=2 << 30)
+        cfg = settings()
+        FileCheckpointStore(checkpoints).prune(
+            max_age_days=cfg.checkpoint_days,
+            max_bytes=int(cfg.checkpoint_gb * (1 << 30)),
+        )
     except Exception:
         # Tidying must never turn a successful command into a failed one.
         pass

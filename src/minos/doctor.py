@@ -216,6 +216,20 @@ def diagnose(base_url: str = DEFAULT_URL) -> Report:
 # -- output ----------------------------------------------------------------
 
 
+def _config_section() -> list[str]:
+    """What the runtime is actually configured to do.
+
+    Printed with secrets redacted, because the most likely reason anyone runs
+    doctor is to paste the output somewhere and ask what is wrong.
+    """
+    from .config import settings
+
+    cfg = settings()
+    lines = ["", "  configuration (.env, then environment, then defaults)"]
+    lines += [f"  {line}" for line in cfg.describe()]
+    return lines
+
+
 def _sandbox_section() -> list[str]:
     """What the sandbox can import, and what it cannot.
 
@@ -257,6 +271,7 @@ def render(report: Report) -> str:
     if report.installed_models:
         lines.append(f"  models     : {', '.join(report.installed_models)}")
 
+    lines += _config_section()
     lines += _sandbox_section()
 
     lines += [
