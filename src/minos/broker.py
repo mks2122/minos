@@ -20,7 +20,7 @@ The pipeline, in order:
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -30,9 +30,11 @@ from .checkpoint import CheckpointStore, UnprotectableTarget
 from .oracles import NullOracle, compare
 from .scopes import ScopeSet
 from .types import (
+    ActionRequest,
     AdmissionDecision,
     CheckpointId,
     EffectClass,
+    EffectContract,
     Grant,
     Invocation,
     OracleResult,
@@ -41,13 +43,30 @@ from .types import (
     ReversalOutcome,
 )
 
-__all__ = ["Approver", "AutoDeny", "Broker", "Executor", "always_deny", "cli_approver"]
+__all__ = [
+    "Approver",
+    "AutoDeny",
+    "Broker",
+    "Compensator",
+    "Executor",
+    "always_deny",
+    "cli_approver",
+]
 
 Executor = Callable[[Invocation], Any]
 """Runs the invocation. Supplied by the tier, called only by the broker."""
 
 Approver = Callable[[Invocation, AdmissionDecision], bool]
 """Asks a human. Returning True admits the action."""
+
+Compensator = Callable[["ActionRequest"], "Outcome"]
+"""Runs a declared inverse.
+
+Supplied by whoever owns a router -- the broker deliberately does not, because
+invariant I1 keeps planning and execution apart and a broker that could route
+its own requests would blur that. Routing a compensation back through
+:meth:`Broker.submit` is what gives it a scope check and an audit entry of its
+own, rather than a privileged side channel."""
 
 
 class AutoDeny(Exception):
@@ -88,7 +107,12 @@ class Broker:
     audit: AuditLog
     store: CheckpointStore
     approver: Approver = always_deny
+    compensator: Compensator | None = None
+    """Without one, a COMPENSABLE effect that fails says so rather than
+    pretending the declared inverse ran."""
+
     dry_run: bool = False
+    _compensating: bool = field(default=False, init=False, repr=False)
 
     # -- public surface ----------------------------------------------------
 
@@ -287,7 +311,7 @@ class Broker:
         try:
             result = executor(invocation)
         except Exception as exc:
-            reversal = self._reverse(checkpoint_id)
+            reversal = self._reverse(checkpoint_id) or self._compensate(contract)
             status = "reconciliation_required" if reversal and not reversal.succeeded else "failed"
             return self._record(
                 invocation,
@@ -324,7 +348,7 @@ class Broker:
             )
 
         # Mismatch: reality did not match the contract. Try to put it back.
-        reversal = self._reverse(checkpoint_id)
+        reversal = self._reverse(checkpoint_id) or self._compensate(contract)
 
         if collateral:
             # The checkpoint only ever covered the *declared* targets, so even a
@@ -401,6 +425,74 @@ class Broker:
             attempted=True,
             succeeded=True,
             detail=f"restored {len(result.restored)} target(s), verified",
+        )
+
+    def _compensate(self, contract: EffectContract) -> ReversalOutcome | None:
+        """Run a COMPENSABLE effect's declared inverse.
+
+        Until now these were declared and scope-checked but never executed,
+        which made COMPENSABLE indistinguishable from IRREVERSIBLE in practice
+        while looking like it was handled. PLAN.md calls that the project's top
+        risk, and it was right.
+
+        The inverse goes back through :meth:`submit` via the compensator, so it
+        is admitted, scoped and recorded like any other action. A compensation
+        that reaches the world through a privileged side channel would be a hole
+        in exactly the component that exists to prevent holes.
+        """
+        if contract.effect_class is not EffectClass.COMPENSABLE:
+            return None
+
+        compensation = contract.compensation
+        if compensation is None:  # pragma: no cover - EffectContract enforces this
+            return None
+
+        if self.compensator is None:
+            # Saying "no inverse was run" is the whole point. Reporting a clean
+            # reversal here would be the lie this component exists to prevent.
+            return ReversalOutcome(
+                attempted=False,
+                succeeded=False,
+                detail=(
+                    f"declared inverse {compensation.operation!r} was not run: "
+                    "no compensator is configured, so this external effect stands"
+                ),
+            )
+
+        if self._compensating:
+            # A compensation that fails must not trigger its own compensation.
+            # One level, then stop and say so.
+            return ReversalOutcome(
+                attempted=False,
+                succeeded=False,
+                detail="refusing to compensate a compensation; reconcile by hand",
+            )
+
+        self._compensating = True
+        try:
+            outcome = self.compensator(compensation)
+        except Exception as exc:
+            return ReversalOutcome(
+                attempted=True,
+                succeeded=False,
+                detail=f"inverse {compensation.operation!r} raised {type(exc).__name__}: {exc}",
+            )
+        finally:
+            self._compensating = False
+
+        if outcome.status == "ok":
+            return ReversalOutcome(
+                attempted=True,
+                succeeded=True,
+                detail=f"ran declared inverse {compensation.operation!r}, verified",
+            )
+        return ReversalOutcome(
+            attempted=True,
+            succeeded=False,
+            detail=(
+                f"declared inverse {compensation.operation!r} did not succeed "
+                f"({outcome.status}: {outcome.error or outcome.decision.rationale})"
+            ),
         )
 
     def _record(

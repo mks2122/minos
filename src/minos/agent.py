@@ -22,7 +22,7 @@ from dataclasses import dataclass, field
 from .broker import Broker
 from .planner.base import Done, Observation, Planner, Trajectory
 from .router import NoAdapter, Router
-from .types import ActionRequest
+from .types import ActionRequest, Outcome
 
 __all__ = ["Agent", "AgentLimits"]
 
@@ -40,6 +40,18 @@ class Agent:
     router: Router
     broker: Broker
     limits: AgentLimits = field(default_factory=AgentLimits)
+
+    def __post_init__(self) -> None:
+        # The broker has no router by design (I1), so it cannot run a declared
+        # inverse on its own. The agent owns both, so this is where they meet --
+        # and routing the inverse back through submit() is what gives it a scope
+        # check and an audit entry rather than a privileged side channel.
+        if self.broker.compensator is None:
+            self.broker.compensator = self._compensate
+
+    def _compensate(self, request: ActionRequest) -> Outcome:
+        routed = self.router.route(request)
+        return self.broker.submit(routed.invocation, routed.execute)
 
     def run(self, goal: str, goal_id: str = "task") -> Trajectory:
         trajectory = Trajectory(goal=goal, goal_id=goal_id)

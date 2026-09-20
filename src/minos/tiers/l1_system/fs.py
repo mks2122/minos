@@ -30,6 +30,7 @@ from ...types import (
     EffectContract,
     Grant,
     Invocation,
+    Oracle,
     Tier,
 )
 from ..base import CapabilityManifest, OperationUnsupported, Preparation
@@ -226,12 +227,18 @@ class FilesystemAdapter:
             else:
                 path.unlink()
 
+        # A directory hashes to None whether it exists or not, so a hash oracle
+        # cannot tell a deleted directory from a present one and reports every
+        # rmdir as a no-op. Existence is the right question for a directory --
+        # it is the case PathExistsOracle was written for.
+        oracle: Oracle = PathExistsOracle((path,)) if path.is_dir() else FileHashOracle((path,))
+
         return Preparation(
             contract=EffectContract(
                 # Genuinely reversible: the checkpoint holds the bytes.
                 effect_class=EffectClass.REVERSIBLE,
                 targets=(path,),
-                oracle=FileHashOracle((path,)),
+                oracle=oracle,
                 expect=f"{path} no longer exists",
             ),
             execute=execute,
