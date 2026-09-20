@@ -26,6 +26,11 @@ claude = ["anthropic>=0.40"]
 # dependencies and that stays true. Without these the sandbox still works, and
 # a task that needs one fails by naming it rather than with a traceback.
 #   uv sync --extra sandbox
+# The GUI tier clicks by coordinate without this. With it, it can find controls
+# by name through UI Automation, which is the difference between automation that
+# survives a window resize and automation that does not.
+gui = ["comtypes>=1.4; sys_platform == 'win32'"]
+
 sandbox = [
     "pypdf>=4.0",
     "python-docx>=1.1",
@@ -77,7 +82,8 @@ python_version = "3.11"
 strict = true
 files = ["src/minos"]
 
-# anthropic is an optional extra. A checkout without it must still typecheck.
+# anthropic and comtypes are optional extras. A checkout without them must still
+# typecheck, and comtypes does not exist off Windows at all.
 [[tool.mypy.overrides]]
-module = ["anthropic.*"]
+module = ["anthropic.*", "comtypes.*"]
 ignore_missing_imports = true

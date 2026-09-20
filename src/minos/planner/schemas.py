@@ -167,6 +167,48 @@ _SCHEMAS: dict[str, dict[str, Any]] = {
         },
         ["artifact", "path"],
     ),
+    "ui.click": _tool(
+        "ui_click",
+        (
+            "Click a control in the focused window. Prefer naming the control "
+            "with 'element' -- clicking by coordinate breaks whenever the window "
+            "moves, resizes or the display scaling differs, and it fails "
+            "silently by landing on whatever is there instead. Give x and y only "
+            "when the control has no accessible name."
+        ),
+        {
+            "element": {
+                "type": "string",
+                "description": "The control's visible name, e.g. 'Save'.",
+            },
+            "x": {"type": "integer", "description": "Screen x. Only without 'element'."},
+            "y": {"type": "integer", "description": "Screen y. Only without 'element'."},
+            "button": {"type": "string", "description": "left, right or middle. Default left."},
+        },
+        [],
+    ),
+    "ui.type": _tool(
+        "ui_type",
+        "Type text into the focused window.",
+        {"text": {"type": "string"}},
+        ["text"],
+    ),
+    "ui.key": _tool(
+        "ui_key",
+        "Press a key chord in the focused window, e.g. 'ctrl+s' or 'alt+f4'.",
+        {"chord": {"type": "string"}},
+        ["chord"],
+    ),
+    "ui.screenshot": _tool(
+        "ui_screenshot",
+        (
+            "Observe the focused window: its title and size. This is the weakest "
+            "evidence the runtime has -- it says something rendered, not that "
+            "anything is true. Never treat it as confirmation that a task worked."
+        ),
+        {},
+        [],
+    ),
     "memory.recall": _tool(
         "memory_recall",
         (
