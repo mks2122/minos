@@ -87,5 +87,10 @@ for _spec in (
     OperationSpec("ui.screenshot", "ui.input", "Capture the screen"),
     OperationSpec("clipboard.read", "clipboard.read", "Read the clipboard"),
     OperationSpec("clipboard.write", "clipboard.write", "Write the clipboard"),
+    OperationSpec(
+        "state.undo",
+        "state.undo",
+        "Restore a past action's declared targets (human-initiated)",
+    ),
 ):
     register(_spec)

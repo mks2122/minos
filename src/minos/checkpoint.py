@@ -28,6 +28,7 @@ import os
 import shutil
 import stat
 import sys
+import time
 import uuid
 from collections.abc import Iterable
 from dataclasses import dataclass
@@ -454,6 +455,43 @@ class FileCheckpointStore:
                     removed += 1
         return removed
 
+    def prune(self, *, max_age_days: float = 7.0, max_bytes: int = 2 << 30) -> tuple[int, int]:
+        """Apply the retention policy: age first, then size. Returns (manifests, objects).
+
+        Checkpoints are what ``minos undo`` offers, so pruning is deliberately
+        conservative and deliberately explicit — an unbounded store is a real
+        failure mode on a laptop, and silently keeping everything is not the
+        safer option it appears to be.
+
+        Age wins first because a week-old checkpoint is rarely what anyone wants
+        back. If the store is still over budget after that, the oldest survivors
+        go until it fits.
+        """
+        now = time.time()
+        cutoff = now - max_age_days * 86_400
+        manifests = sorted(self.manifests.glob("*.json"), key=_mtime)
+
+        dropped = 0
+        survivors: list[Path] = []
+        for manifest in manifests:
+            if _mtime(manifest) < cutoff:
+                with contextlib.suppress(OSError):
+                    manifest.unlink()
+                    dropped += 1
+            else:
+                survivors.append(manifest)
+
+        objects = self.gc()
+
+        while survivors and self.usage_bytes() > max_bytes:
+            oldest = survivors.pop(0)
+            with contextlib.suppress(OSError):
+                oldest.unlink()
+                dropped += 1
+            objects += self.gc()
+
+        return dropped, objects
+
     def usage_bytes(self) -> int:
         """Total size of the object store, for reporting and retention policy."""
         total = 0
@@ -495,6 +533,13 @@ def _parse_manifest(raw: str) -> dict[str, TargetState]:
         path: TargetState(kind="absent") if digest is None else TargetState("file", digest=digest)
         for path, digest in data.items()
     }
+
+
+def _mtime(path: Path) -> float:
+    try:
+        return path.stat().st_mtime
+    except OSError:  # pragma: no cover - raced with another prune
+        return 0.0
 
 
 def _same_state(current: TargetState, recorded: TargetState) -> bool:

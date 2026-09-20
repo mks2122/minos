@@ -5,6 +5,8 @@
     minos run "set Q3 revenue to 48200" -w ./data --allow-write
     minos eval                                   run the task suite
     minos audit .minos/audit.jsonl                verify the chain
+    minos undo                                   what can be put back
+    minos undo --last                            put the last action back
     minos index ./data                           build the memory index
     minos recall "the excel from yesterday"      resolve a vague reference
     minos skills                                 list stored skills
@@ -302,6 +304,84 @@ def cmd_audit(args: argparse.Namespace) -> int:
     return 0 if not breaks else 1
 
 
+# -- minos undo -------------------------------------------------------------
+
+
+def cmd_undo(args: argparse.Namespace) -> int:
+    from .audit import AuditLog
+    from .checkpoint import FileCheckpointStore, UnprotectableTarget
+    from .undo import UndoError, find, perform_undo, undoable_actions
+
+    state = Path(args.state).expanduser().resolve()
+    audit_path = state / "audit.jsonl"
+    if not audit_path.exists():
+        print(f"error: no audit log at {audit_path}", file=sys.stderr)
+        return 2
+
+    audit = AuditLog(audit_path)
+    store = FileCheckpointStore(state / "checkpoints")
+
+    selector = "last" if args.last else args.which
+    if selector is None:
+        actions = undoable_actions(audit, store)
+        if not actions:
+            print("\n  nothing to undo: no action has a restorable checkpoint\n")
+            return 0
+        print(f"\n  undoable actions ({len(actions)})\n  {'-' * 62}")
+        for action in actions[: args.tail]:
+            flag = "" if action.clean else "  [partial: had collateral changes]"
+            print(f"  #{action.seq:<4} {action.when}  {action.operation:<16}{flag}")
+            if action.intent:
+                print(f"        {action.intent}")
+            for target in action.targets[:3]:
+                print(f"        target: {target}")
+        print(f"\n  minos undo --last      undo #{actions[0].seq}")
+        print("  minos undo <seq>       undo a specific one\n")
+        return 0
+
+    try:
+        action = find(audit, store, selector)
+    except UndoError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+
+    print(f"\n  undo #{action.seq}  {action.operation}  ({action.when})")
+    if action.intent:
+        print(f"    {action.intent}")
+    for target in action.targets:
+        print(f"    restores: {target}")
+    if not action.clean:
+        print(
+            f"    WARNING: this action also changed {len(action.collateral)} undeclared "
+            "path(s).\n             Those were never checkpointed and will NOT be restored."
+        )
+
+    # Restoring overwrites whatever is there now. That is a write, and writes in
+    # this runtime are things you typed.
+    if not args.yes and input("\n  proceed? [y/N] ").strip().lower() not in {"y", "yes"}:
+        print("  cancelled\n")
+        return 1
+
+    try:
+        result, redo_id = perform_undo(audit, store, action)
+    except UnprotectableTarget as exc:
+        print(f"\n  refused: {exc}\n", file=sys.stderr)
+        return 1
+
+    if result.succeeded:
+        print(f"\n  restored {len(result.restored)} target(s), verified")
+        if redo_id:
+            print(f"  to reverse this undo:  minos undo {redo_id}")
+        print()
+        return 0
+
+    print(f"\n  FAILED: {result.detail}")
+    for path, reason in result.failed:
+        print(f"    {path}: {reason}")
+    print()
+    return 1
+
+
 # -- minos index / recall ---------------------------------------------------
 
 
@@ -445,6 +525,19 @@ def build_parser() -> argparse.ArgumentParser:
     audit.add_argument("-v", "--verbose", action="store_true")
     audit.set_defaults(func=cmd_audit)
 
+    undo = sub.add_parser("undo", help="put a past action's files back")
+    undo.add_argument(
+        "which",
+        nargs="?",
+        default=None,
+        help="audit sequence number or checkpoint id; omit to list what is undoable",
+    )
+    undo.add_argument("--last", action="store_true", help="undo the most recent action")
+    undo.add_argument("--yes", action="store_true", help="skip the confirmation prompt")
+    undo.add_argument("-n", "--tail", type=int, default=20)
+    undo.add_argument("--state", default=str(DEFAULT_STATE))
+    undo.set_defaults(func=cmd_undo)
+
     index = sub.add_parser("index", help="index a directory into memory")
     index.add_argument("directory")
     index.add_argument("--state", default=str(DEFAULT_STATE))
@@ -482,7 +575,30 @@ def main(argv: list[str] | None = None) -> int:
         return eval_main(argv[1:])
 
     args = build_parser().parse_args(argv)
-    return int(args.func(args))
+    try:
+        return int(args.func(args))
+    finally:
+        _apply_retention(getattr(args, "state", None))
+
+
+def _apply_retention(state: str | None) -> None:
+    """Keep 7 days or 2 GB of checkpoints, whichever binds first.
+
+    Runs on the way out so it never delays the command, and never raises: a
+    failure to tidy up must not turn a successful action into a failed one.
+    """
+    if not state:
+        return
+    checkpoints = Path(state).expanduser() / "checkpoints"
+    if not checkpoints.exists():
+        return
+    try:
+        from .checkpoint import FileCheckpointStore
+
+        FileCheckpointStore(checkpoints).prune(max_age_days=7.0, max_bytes=2 << 30)
+    except Exception:
+        # Tidying must never turn a successful command into a failed one.
+        pass
 
 
 if __name__ == "__main__":
