@@ -2,15 +2,18 @@
 
 > **The model asks. The runtime decides.**
 
-A desktop agent runtime where every action — a syscall, a typed spreadsheet write, or a
-synthetic click — passes through one capability-scoped policy broker, with declared
-effects, full provenance, and a rollback you can actually trust.
+A desktop agent runtime where every action — a syscall, a typed spreadsheet write, a
+script it wrote itself, or a synthetic click — passes through one capability-scoped
+policy broker, with declared effects, full provenance, and a rollback you can actually
+trust.
 
-**Status: pre-alpha.** All three tiers, the broker, agent loop, Claude planner, eval
-harness, computer-state memory and verified skills work and are tested. The L3 GUI tier
-ships with a stub driver -- real pixel control means wiring up
-[cua-driver](https://github.com/trycua/cua), which is not done.
-Do not point this at data you cannot afford to lose.
+It runs **fully offline** on one laptop, against a local model.
+
+**Status: pre-alpha.** The broker, all four tiers, the sandbox, the agent loop, the
+local and Claude planners, computer-state memory, verified skills, user-facing undo
+and the eval harness work and are tested — 628 tests, 15/15 on the suite, 0 invariant
+violations. Real mouse and keyboard control works on Windows; macOS and Linux still
+have a stub. Do not point this at data you cannot afford to lose.
 
 **Platforms:** Windows and Linux (Tier 1), macOS (Tier 2 — CI-green, not hand-verified).
 Runs natively. Not in WSL2.
@@ -35,16 +38,68 @@ its compromise survivable — it cannot do anything it was not already scoped to
 
 ---
 
+## It can do things nobody wrote a tool for
+
+Sixteen milestones bought 22 typed operations, because each one cost an adapter, an
+effect contract, an oracle and a reversal path. That cost never amortizes, and "do
+almost anything" is not a list anyone finishes.
+
+So there is a fourth tier. `code.run` writes Python into a sandbox and runs it;
+`code.materialize` promotes one artifact onto your real filesystem. The trick is that
+**running it in the sandbox first is what makes a precise effect contract possible**:
+
+```
+1. run the code in the sandbox, against copies      nothing real is touched
+2. observe what it actually wrote                   the artifact set
+3. that set becomes the effect contract             retroactively, and exactly
+4. checkpoint those destinations, apply, verify     ordinary fs.write from here
+```
+
+The computation is unverified — no oracle can read back *"whatever that program decided
+to compute"*, and the runtime counts and publishes that gap rather than inventing a
+green tick. The effect on your machine is fully verified and fully reversible.
+
+"Convert this PDF to Word" is a tested example. Nobody wrote a `doc.convert`
+operation, and nobody is going to.
+
+⚠️ **The sandbox is a jail, not a security boundary.** It stops badly written code, not
+code trying to escape. See [SECURITY.md](SECURITY.md).
+
+---
+
+## Undo
+
+The store already held every pre-action state. Now you can reach it:
+
+```bash
+minos undo              # what is undoable, newest first
+minos undo --last       # put the last action back
+minos undo 14           # put a specific one back
+```
+
+Undo is itself undoable — restoring is a write, so it takes a checkpoint first — and it
+is recorded in the hash chain as a human-initiated action, because a log that omits
+undos describes the agent rather than what happened.
+
+---
+
 ## Run it
 
 ```bash
 uv sync --all-extras
+cp .env.example .env        # optional; the defaults are already local
 uv run python main.py
 ```
 
 An interactive menu -- pick a number, type your own goal. It ships with a sample
 `data/` workspace so the first option works immediately, starts **read-only**, and
 prints the exact scopes before it does anything.
+
+Configuration is `.env`, the environment, then built-in defaults — and a flag you
+typed beats all three. The defaults point at Ollama on localhost with a model that
+fits in 8 GB of VRAM, because running offline on one laptop is the claim, not a
+fallback. `.env.example` documents every knob; `minos doctor` prints what resolved,
+with secrets redacted.
 
 There is a flag-driven CLI too, if you prefer:
 
@@ -280,7 +335,9 @@ uv run mypy            # strict
 | [docs/LOCAL.md](docs/LOCAL.md) | Running fully offline: models, sizing, and what not to bother with |
 | [docs/STATUS.md](docs/STATUS.md) | What is built, what is stubbed, what is missing |
 | [SECURITY.md](SECURITY.md) | Threat model — and what this does **not** protect against |
-| [docs/PLAN.md](docs/PLAN.md) | Milestones, build-vs-borrow, metrics |
+| [docs/PLAN.md](docs/PLAN.md) | The original milestones, build-vs-borrow, metrics |
+| [docs/PLAN-GENERALITY.md](docs/PLAN-GENERALITY.md) | M17+ — the sandbox, the virtual device, and why capability stopped costing an adapter each |
+| [docs/REVIEW.md](docs/REVIEW.md) | A full audit of the copy-before-write journal, and the bugs it found |
 | [docs/PORTABILITY.md](docs/PORTABILITY.md) | Cross-platform design |
 | [docs/MODELS.md](docs/MODELS.md) | Model choices and hardware ceilings |
 | [docs/research/](docs/research/) | The survey this design came out of |

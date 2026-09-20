@@ -100,6 +100,67 @@ The chain is tamper-**evident**, not tamper-proof. Detecting a full-file rewrite
 
 ---
 
+## The sandbox is a jail, not a security boundary
+
+`code.run` executes code an LLM wrote. What contains it is a subprocess with a
+scrubbed environment, a working-directory convention, a patched `socket` module
+and (on POSIX) resource limits. **None of that is enforced by the kernel.** The
+script runs as the same user, with the same filesystem permissions, as the
+runtime itself.
+
+What it does stop:
+
+| | |
+|---|---|
+| Network access | `socket.socket` raises before the script's first line. Defeats urllib, requests, httpx — everything ordinary |
+| Credential theft from the environment | Allow-list then deny-list; `ANTHROPIC_API_KEY` and friends are not present |
+| Runaway execution | Wall-clock kill, output truncation, `RLIMIT_AS` and `RLIMIT_NPROC` on POSIX |
+| Corrupting its inputs | Materials are copies |
+
+What it does **not** stop, and is not claimed to:
+
+- `ctypes`, which can call `socket(2)` directly and bypass the patched module
+- `subprocess`, which can spawn anything the user can run
+- Reading any file the user can read. The cwd is a convention, not a jail
+- Anything at all on Windows in terms of memory or process limits — there is no
+  `RLIMIT_AS` equivalent without Job Objects
+
+**This is the right trade for the threat that exists** — code written by a local
+model against the user's own task, which fails by being wrong rather than by
+being hostile — and **the wrong trade for code from anywhere else.** A
+downloaded skill, a shared recipe or a remote planner changes the threat, and
+the containment has to change with it. `SandboxBackend` is a protocol so a
+container or microVM implementation can replace this without anything above it
+changing.
+
+The effect that reaches the user is separately protected: `code.materialize` is
+an ordinary `fs.write`, checkpointed and hash-verified, and it is the only way
+anything leaves the sandbox.
+
+## The virtual device drives your real desktop
+
+`--allow-gui` grants `ui.input` and hands the agent your actual mouse and
+keyboard. There is no virtual display and no VM: that is a deliberate design
+decision (see `docs/PLAN-GENERALITY.md`), and its consequence is that the agent
+shares your session and takes the cursor while it works.
+
+- `Ctrl+Alt+Esc` aborts and releases input, checked before every synthesised
+  event so it lands within one action.
+- Focus loss deliberately does **not** abort — focus changes constantly during
+  legitimate automation.
+- Synthetic input cannot reach a window running at higher integrity than the
+  runtime. That is Windows UIPI, and the driver raises rather than silently
+  doing nothing.
+- L3 remains the weakest tier. Its oracle is a window title and a size, which is
+  evidence that something rendered, not that anything is true.
+
+## The checkpoint store holds plaintext copies
+
+Every checkpoint is an unencrypted copy of the file it protects, kept in
+`.minos/checkpoints/` until the retention policy prunes it (7 days or 2 GB by
+default). It is `chmod 0700` on POSIX and inherits directory ACLs on Windows.
+Anyone who can read that directory can read every file the agent has touched.
+
 ## Known limitations in the current pre-alpha
 
 - No kernel-level confinement on any platform yet
