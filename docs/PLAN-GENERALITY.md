@@ -1,5 +1,9 @@
 # Build Plan — Generality
 
+**Status: M17–M25 are built and merged.** Section 5 is kept as written, with
+outcomes noted, because a plan is more useful next to what it produced than
+rewritten to look prescient.
+
 M17 onward. The companion to [PLAN.md](PLAN.md), which took the project from
 nothing to a working policy broker, and [REVIEW.md](REVIEW.md), which audits what
 that produced.
@@ -93,7 +97,45 @@ screen oracle.
 
 ---
 
-## 5. Milestones
+## 5. What was actually built
+
+The plan below is kept as written. What shipped diverged from it in two ways
+worth recording, because a plan next to its outcome is more useful than one
+edited to look prescient.
+
+**`minos undo` was inserted first**, as M17, ahead of the sandbox. It was a day's
+work on machinery that already existed, and it is the most visible thing in the
+project — leaving it unexposed while building more capability would have been
+the wrong order.
+
+**Concurrency locking was inserted second**, as M18, once the project was
+confirmed as open source. Two runs sharing a state directory break the audit
+hash chain, and that is a bug report waiting to happen the moment anyone else
+runs it.
+
+| Shipped | Branch | Was planned as |
+|---|---|---|
+| M17 `minos undo` + retention | `m17` (direct to main) | *unplanned — pulled forward* |
+| M18 single-writer lock | `m18/concurrency-lock` | *unplanned — OSS requirement* |
+| M19 sandbox + L2.5 code tier | `m19/sandbox` | M17 + M18 + M20 |
+| M20 wiring, packages, proof task | `m20/code-wired` | M19 |
+| M21 virtual device | `m21/virtual-device` | M21 |
+| M22 grounding | `m22/grounding` | M22 |
+| M23 `.env` configuration | `m23/env-config` | *unplanned — requested* |
+| M24 invariant evals | `m24/invariant-evals` | M23 |
+| M25 compensation execution | `m25/compensation` | *from PLAN.md §10, long overdue* |
+
+Two things in the plan below did **not** ship as described. The pre-baked wheel
+cache (M19 as planned) became a *report* on the interpreter the runtime already
+has, plus an optional `sandbox` extra — installing packages is the user's
+decision, made with the user's package manager. And the open-weights grounding
+model (M22 as planned) was not needed: the accessibility tree alone was enough,
+and adding a vision model to click a button that UIA can already name would have
+been effort spent in the wrong place.
+
+---
+
+## 5a. Milestones as planned
 
 One branch per milestone, merged to `main`, per existing convention.
 

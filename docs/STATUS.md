@@ -1,7 +1,7 @@
 # Status
 
-Last updated 20 Sep 2026. **409 tests passing, 3 skipped. Eval 15/15, no regressions.
-Ruff clean, mypy strict clean.**
+Last updated 21 Sep 2026. **628 tests passing, 4 skipped. Eval 15/15, no regressions,
+0 invariant violations. Ruff clean, mypy strict clean.**
 
 Written so nobody has to guess which parts are real.
 
@@ -17,22 +17,30 @@ Written so nobody has to guess which parts are real.
 | **Tier router** | L1 → L2 → L3 with recorded degradation and published fallback rate |
 | **L1** | Filesystem (9 operations), process spawn, **`app.open`** (default handler), memory recall |
 | **L2** | Tabular: cell-level workbook operations. CSV built in, backends pluggable |
-| **L3** | Click / type / key / screenshot behind a driver protocol — **stub driver only** |
+| **L2.5** | **The sandbox**: `code.run` writes and runs Python in a jailed workspace; `code.materialize` promotes one artifact through the broker as an ordinary checkpointed, verified `fs.write` |
+| **L3** | Click / type / key / screenshot. **Real on Windows** via `SendInput`, with `Ctrl+Alt+Esc` to abort; stub driver elsewhere |
+| **Grounding** | `ui.click` takes an element name and resolves it against the UI Automation tree; ambiguity raises rather than guessing; invoking avoids moving the cursor |
 | **Planner** | Protocol, scripted, Claude (manual tool loop), **local** (any OpenAI-compatible server) |
 | **Offline** | `minos doctor` checks readiness; `--offline` refuses to call a remote model |
 | **Agent loop** | Step budget, halt on `reconciliation_required`, abandon on repeated denial |
 | **Eval** | 15 tasks, binary, seeded, 6 REFUSE tasks, regression detection, CI-enforced |
 | **Memory** | File index, provenance, **app/open history**, **polling filesystem watcher**, FTS, deictic resolution with explanations -- wired into the agent as scope-gated `memory.recall` / `memory.recent` |
 | **Skills** | Promotion with refusals, scoped replay, drift detection, agentskills-compatible storage |
+| **Undo** | `minos undo` restores any past action's declared targets. Itself undoable, and recorded in the chain as a human-initiated `state.undo` |
+| **Compensation** | `COMPENSABLE` inverses are **executed** on failure, routed back through the broker so they are scoped and logged |
+| **Locking** | One writer per state directory, `O_EXCL`, with stale-lock reclaim. Concurrent runs can no longer break the hash chain |
+| **Config** | `.env` + environment + defaults, local-model-first; secrets redacted in `doctor` output |
+| **Invariants** | 11 runtime promises checked against every task on every eval run, reported separately from task success |
 
 ## Stubbed or absent
 
 | | |
 |---|---|
-| **Real GUI control** | `CuaDriver` raises `NotImplementedError` with instructions. Wiring up cua-driver is the work |
+| **GUI on macOS/Linux** | `WindowsDriver` is Windows-only; `CuaDriver` is still the unimplemented seam for the other two |
+| **Real input delivery is untested** | Every synthetic event's *encoding* is tested; delivery is not, because a test suite must not drive the developer's cursor. Exercised by hand only |
 | **Frontier model runs** | The Claude planner is tested against a fake client only. **No remote model has been scored on the eval suite** (a local one has: 12/15) |
 | **`net.http`** | Registered as a capability; no adapter implements it |
-| **Compensation execution** | `COMPENSABLE` inverses are declared and scope-checked, but not yet *run* on failure |
+| **Sandbox is not a security boundary** | A jailed subprocess, not a kernel boundary. It stops badly written code, not code trying to escape. See SECURITY.md |
 | **Kernel confinement** | Landlock/seccomp/AppContainer. The broker's mediation is the only enforcement today |
 | **Audit anchoring** | The chain is tamper-evident, not tamper-proof. An external anchor is not implemented |
 | **Native file events** | The watcher polls. inotify / FSEvents / ReadDirectoryChangesW would be faster but are three different APIs with three sets of bugs |
@@ -69,12 +77,15 @@ a remote model. See [LOCAL.md](LOCAL.md).
 
 ## Next
 
-See [PLAN-GENERALITY.md](PLAN-GENERALITY.md) for M17 onward, and [REVIEW.md](REVIEW.md)
-for the audit those milestones answer.
+M17–M25 are done; see [PLAN-GENERALITY.md](PLAN-GENERALITY.md) for what they were
+and [REVIEW.md](REVIEW.md) for the audit that set them.
 
-1. `code.run` — a sandboxed scratchpad, so capability stops being a per-tool cost.
-2. Execute `COMPENSABLE` inverses on failure — currently declared but not run, and
-   `PLAN.md`'s own top risk says to stop and fix it.
-3. Wire up `cua-driver` so L3 is real, and add GUI tasks to the eval suite.
-4. Score a model on the suite and publish the number, with the model named and dated.
-5. Landlock on Linux as defence-in-depth.
+1. Score a model on the suite and publish the number, with the model named and dated.
+2. Long-horizon eval tasks. Every task is still under 10 steps, which
+   [EVALUATION.md](../EVALUATION.md) correctly calls the regime where published
+   agents look good and real work does not live.
+3. Split the broker into its own process — `PLAN.md` §11 recommended this for M6
+   and it never happened, so a bug in the broker is still a full bypass.
+4. GUI tasks in the eval suite, now that L3 is real on one platform.
+5. Landlock on Linux as defence-in-depth, and a container sandbox backend for
+   when the code being run is not the user's own.
