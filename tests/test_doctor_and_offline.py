@@ -225,3 +225,92 @@ def test_runner_is_found_outside_path(monkeypatch, tmp_path):
     monkeypatch.setattr(doctor_module.shutil, "which", lambda _name: None)
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
     assert doctor_module._find_runner() == "ollama"
+
+
+# -- a server with the wrong model is not a ready server -------------------
+
+
+def test_offline_is_no_when_the_configured_model_is_not_installed():
+    """The bug this catches: doctor said YES while `minos run` 404'd.
+
+    A server that is up holding *some* model cannot run the model this machine
+    is configured to use, and answering YES to that sends someone off to debug
+    a server that was never broken.
+    """
+    from minos.doctor import Report
+
+    report = Report(
+        server_up=True,
+        installed_models=["qwen3:8b"],
+        configured_model="qwen3:14b",
+    )
+
+    assert not report.can_run_offline
+    assert any("not installed" in b for b in report.blockers())
+
+
+def test_offline_is_yes_when_the_configured_model_is_there():
+    from minos.doctor import Report
+
+    report = Report(
+        server_up=True,
+        installed_models=["qwen3:8b"],
+        configured_model="qwen3:8b",
+    )
+
+    assert report.can_run_offline
+    assert report.blockers() == []
+
+
+def test_the_blocker_names_the_fix():
+    from minos.doctor import Report
+
+    blockers = Report(server_up=True, installed_models=["a"], configured_model="b").blockers()
+
+    assert any("ollama pull b" in b for b in blockers)
+
+
+# -- a 404 is not an unreachable server ------------------------------------
+
+
+def test_a_missing_model_is_not_reported_as_a_dead_server():
+    """HTTPError subclasses URLError, so it has to be caught first.
+
+    Reporting "is the server running?" for a 404 is how a two-second fix
+    becomes an afternoon.
+    """
+    import urllib.error
+
+    from minos.planner.local import LocalPlanner
+
+    planner = LocalPlanner(operations=("fs.read",), model="not-installed")
+    error = urllib.error.HTTPError(
+        url="http://localhost:11434/v1/chat/completions",
+        code=404,
+        msg="Not Found",
+        hdrs=None,  # type: ignore[arg-type]
+        fp=None,
+    )
+
+    message = planner._explain_http_error(error)
+
+    assert "not-installed" in message
+    assert "ollama pull" in message
+    assert "Is the server running?" not in message
+
+
+def test_other_http_errors_report_their_status():
+    import urllib.error
+
+    from minos.planner.local import LocalPlanner
+
+    planner = LocalPlanner(operations=("fs.read",))
+    error = urllib.error.HTTPError(
+        url="http://x/v1",
+        code=500,
+        msg="Server Error",
+        hdrs=None,
+        fp=None,  # type: ignore[arg-type]
+    )
+
+    assert "500" in planner._explain_http_error(error)

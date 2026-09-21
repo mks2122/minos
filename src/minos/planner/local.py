@@ -127,6 +127,48 @@ class LocalPlanner:
 
     # -- Planner protocol --------------------------------------------------
 
+    def _explain_http_error(self, exc: urllib.error.HTTPError) -> str:
+        """Say what the server actually objected to.
+
+        A 404 from an OpenAI-compatible endpoint almost always means the model
+        name is not installed, not that the URL is wrong -- and the two have
+        completely different fixes. Naming the installed models turns the
+        message into the answer.
+        """
+        detail = ""
+        try:
+            body = exc.read().decode("utf-8", "replace")
+            detail = json.loads(body).get("error", {}).get("message", "") or body[:200]
+        except (ValueError, OSError, AttributeError):
+            detail = exc.reason if isinstance(exc.reason, str) else ""
+
+        if exc.code == 404:
+            installed = self._installed_models()
+            listing = ", ".join(installed) if installed else "none found"
+            return (
+                f"the local server does not have a model called {self.model!r} "
+                f"({detail or 'not found'}). "
+                f"installed: {listing}. "
+                f"Fix: `ollama pull {self.model}`, or set MINOS_MODEL in .env "
+                f"to one of the above."
+            )
+        if exc.code in (401, 403):
+            return f"the local server refused the request ({exc.code}): {detail}"
+        return (
+            f"the local server at {self.base_url} returned HTTP {exc.code}: {detail or exc.reason}"
+        )
+
+    def _installed_models(self) -> list[str]:
+        """Best effort. A failure here must not replace the real error."""
+        url = f"{self.base_url.rstrip('/')}/models"
+        try:
+            request = urllib.request.Request(url, method="GET")
+            with urllib.request.urlopen(request, timeout=2.0) as response:
+                data = json.loads(response.read().decode("utf-8"))
+            return sorted(str(m.get("id", "")) for m in data.get("data", []) if m.get("id"))
+        except (urllib.error.URLError, TimeoutError, OSError, ValueError, KeyError):
+            return []
+
     def next_action(self, goal: str, observations: list[Observation], scopes: ScopeSet) -> Step:
         if not self._messages:
             self._messages.append(
@@ -138,6 +180,12 @@ class LocalPlanner:
 
         try:
             payload = self._post()
+        except urllib.error.HTTPError as exc:
+            # HTTPError subclasses URLError, so it must be caught first. The
+            # server answered -- reporting "is the server running?" here sends
+            # someone to check a service that is fine, which is how a two-second
+            # fix becomes an afternoon.
+            return Done(summary=self._explain_http_error(exc), succeeded=False)
         except (urllib.error.URLError, TimeoutError) as exc:
             return Done(
                 summary=(

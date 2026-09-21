@@ -45,6 +45,8 @@ class Report:
     ram_gb: float = 0.0
     free_disk_gb: float = 0.0
     server_url: str = DEFAULT_URL
+    configured_model: str = ""
+    """What MINOS_MODEL resolves to. A server with the wrong model is not ready."""
     server_up: bool = False
     installed_models: list[str] = field(default_factory=list)
     runner: str = ""
@@ -55,8 +57,20 @@ class Report:
 
     @property
     def can_run_offline(self) -> bool:
-        """The whole point of the command, as one boolean."""
-        return self.server_up and bool(self.installed_models)
+        """The whole point of the command, as one boolean.
+
+        The configured model has to be one of the installed ones. A server that
+        is up and holding *some* model cannot run the model this machine is set
+        to use, and answering YES to that is how a one-command fix turns into an
+        afternoon of debugging a server that was never broken.
+        """
+        return (
+            self.server_up
+            and bool(self.installed_models)
+            # An empty configured_model means nobody stated a preference, in
+            # which case any installed model will do.
+            and (not self.configured_model or self.configured_model in self.installed_models)
+        )
 
     def blockers(self) -> list[str]:
         problems: list[str] = []
@@ -78,6 +92,20 @@ class Report:
             fits = recommend(self.vram_gb)
             suggestion = fits[0][0] if fits else "qwen3:4b"
             problems.append(f"The server has no models. Pull one:  ollama pull {suggestion}")
+        elif (
+            self.server_up
+            and self.configured_model
+            and self.configured_model not in self.installed_models
+        ):
+            # A server that is up with *some* model is not a server that can run
+            # the model this machine is configured to use. Answering "FULLY
+            # OFFLINE: YES" to that question sends someone off to debug a
+            # working server when the fix is one pull.
+            problems.append(
+                f"MINOS_MODEL is {self.configured_model!r} but that is not installed. "
+                f"Installed: {', '.join(self.installed_models)}. "
+                f"Fix:  ollama pull {self.configured_model}"
+            )
         if self.free_disk_gb and self.free_disk_gb < 15:
             problems.append(
                 f"Only {self.free_disk_gb:.0f} GB free. A model is ~5 GB and "
@@ -207,6 +235,9 @@ def diagnose(base_url: str = DEFAULT_URL) -> Report:
 
     report.runner = _find_runner()
 
+    from .config import settings
+
+    report.configured_model = settings().model
     report.server_up = server_available(base_url)
     if report.server_up:
         report.installed_models = _installed_models(base_url)
