@@ -190,6 +190,15 @@ wheels = [
 ]
 
 [[package]]
+name = "comtypes"
+version = "1.4.16"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/c6/2a/65274c13327f637ec13af8d39f2cf579d9ebe7a0e683696b5f05236d2805/comtypes-1.4.16.tar.gz", hash = "sha256:cd66d1add01265cface4df51ba1e31cd1657e04463c281c802e737e79e1ba93c", size = 260252, upload-time = "2026-03-02T23:11:42.413Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/5f/7c/0eb685107290b6221c03c46d39214a4e42a124189691cb83ae3228257f46/comtypes-1.4.16-py3-none-any.whl", hash = "sha256:e18d85179ff12955524c5a8c3bc09cb3c0d890f1da4d7123d14244c7b78f84c8", size = 296230, upload-time = "2026-03-02T23:11:41.049Z" },
+]
+
+[[package]]
 name = "coverage"
 version = "7.16.1"
 source = { registry = "https://pypi.org/simple" }
@@ -795,6 +804,9 @@ claude = [
 cli = [
     { name = "typer" },
 ]
+gui = [
+    { name = "comtypes", marker = "sys_platform == 'win32'" },
+]
 sandbox = [
     { name = "beautifulsoup4" },
     { name = "chardet" },
@@ -822,6 +834,7 @@ requires-dist = [
     { name = "anthropic", marker = "extra == 'claude'", specifier = ">=0.40" },
     { name = "beautifulsoup4", marker = "extra == 'sandbox'", specifier = ">=4.12" },
     { name = "chardet", marker = "extra == 'sandbox'", specifier = ">=5.2" },
+    { name = "comtypes", marker = "sys_platform == 'win32' and extra == 'gui'", specifier = ">=1.4" },
     { name = "lxml", marker = "extra == 'sandbox'", specifier = ">=5.0" },
     { name = "markdown", marker = "extra == 'sandbox'", specifier = ">=3.5" },
     { name = "openpyxl", marker = "extra == 'sandbox'", specifier = ">=3.1" },
@@ -833,7 +846,7 @@ requires-dist = [
     { name = "pyyaml", marker = "extra == 'sandbox'", specifier = ">=6.0" },
     { name = "typer", marker = "extra == 'cli'", specifier = ">=0.12" },
 ]
-provides-extras = ["cli", "claude", "sandbox"]
+provides-extras = ["cli", "claude", "gui", "sandbox"]
 
 [package.metadata.requires-dev]
 dev = [
