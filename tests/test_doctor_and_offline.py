@@ -314,3 +314,59 @@ def test_other_http_errors_report_their_status():
     )
 
     assert "500" in planner._explain_http_error(error)
+
+
+# -- asking for a context is not getting one -------------------------------
+
+
+def test_a_too_small_served_context_is_reported():
+    """Ollama's OpenAI endpoint ignores per-request num_ctx.
+
+    Invisible from inside the planner: the server simply truncates from the
+    oldest message, which is the system prompt and the tool schemas, and the
+    model stops being able to call tools.
+    """
+    from minos.doctor import Report
+
+    report = Report(
+        server_up=True,
+        installed_models=["qwen3:8b"],
+        configured_model="qwen3:8b",
+        served_context=4096,
+        wanted_context=16384,
+    )
+
+    blockers = report.blockers()
+    assert any("4096" in b and "OLLAMA_CONTEXT_LENGTH" in b for b in blockers)
+
+
+def test_a_large_enough_served_context_is_silent():
+    from minos.doctor import Report
+
+    report = Report(
+        server_up=True,
+        installed_models=["m"],
+        configured_model="m",
+        served_context=32768,
+        wanted_context=16384,
+    )
+
+    assert report.blockers() == []
+
+
+def test_an_unknown_served_context_raises_no_false_alarm():
+    """Every non-Ollama server returns nothing here. Unknown must stay quiet.
+
+    A warning about a server that is fine is worse than no warning.
+    """
+    from minos.doctor import Report
+
+    report = Report(
+        server_up=True,
+        installed_models=["m"],
+        configured_model="m",
+        served_context=0,
+        wanted_context=16384,
+    )
+
+    assert report.blockers() == []

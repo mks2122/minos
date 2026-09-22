@@ -47,6 +47,12 @@ class Report:
     server_url: str = DEFAULT_URL
     configured_model: str = ""
     """What MINOS_MODEL resolves to. A server with the wrong model is not ready."""
+    served_context: int = 0
+    """Context length the server is actually serving, when it will say.
+
+    Not the same as what minos asks for: Ollama's OpenAI-compatible endpoint
+    ignores the `options` block, so asking is not getting."""
+    wanted_context: int = 0
     server_up: bool = False
     installed_models: list[str] = field(default_factory=list)
     runner: str = ""
@@ -105,6 +111,18 @@ class Report:
                 f"MINOS_MODEL is {self.configured_model!r} but that is not installed. "
                 f"Installed: {', '.join(self.installed_models)}. "
                 f"Fix:  ollama pull {self.configured_model}"
+            )
+        if self.served_context and self.wanted_context > self.served_context:
+            # Silent and misdiagnosed otherwise: the server truncates from the
+            # oldest message, which is the system prompt and the tool schemas,
+            # and the model then stops being able to call tools. It looks
+            # exactly like the model being bad at its job.
+            problems.append(
+                f"The server is serving a {self.served_context}-token context but "
+                f"MINOS_CONTEXT_TOKENS is {self.wanted_context}. Ollama's "
+                "OpenAI-compatible endpoint ignores per-request context settings, "
+                "so raise it on the server:  "
+                f"OLLAMA_CONTEXT_LENGTH={self.wanted_context} ollama serve"
             )
         if self.free_disk_gb and self.free_disk_gb < 15:
             problems.append(
@@ -237,11 +255,35 @@ def diagnose(base_url: str = DEFAULT_URL) -> Report:
 
     from .config import settings
 
-    report.configured_model = settings().model
+    cfg = settings()
+    report.configured_model = cfg.model
+    report.wanted_context = cfg.context_tokens
     report.server_up = server_available(base_url)
     if report.server_up:
         report.installed_models = _installed_models(base_url)
+        report.served_context = _served_context(base_url, report.configured_model)
     return report
+
+
+def _served_context(base_url: str, model: str) -> int:
+    """What the server is really serving, if it is Ollama and will say.
+
+    Best effort on purpose: this is an Ollama-specific endpoint and every other
+    OpenAI-compatible server returns nothing useful here. Zero means unknown,
+    and unknown must not produce a warning -- a false alarm about a server that
+    is fine is worse than no alarm.
+    """
+    root = base_url.rstrip("/").removesuffix("/v1")
+    try:
+        request = urllib.request.Request(f"{root}/api/ps", method="GET")
+        with urllib.request.urlopen(request, timeout=3) as response:
+            data = json.loads(response.read())
+    except (urllib.error.URLError, TimeoutError, OSError, ValueError):
+        return 0
+    for entry in data.get("models") or []:
+        if entry.get("model") == model or entry.get("name") == model:
+            return int(entry.get("context_length") or 0)
+    return 0
 
 
 # -- output ----------------------------------------------------------------

@@ -304,11 +304,14 @@ class LocalPlanner:
                 "tool_choice": "auto",
                 "temperature": self.temperature,
                 "stream": False,
-                # Ollama defaults num_ctx to 4096 regardless of what the model
-                # supports, and then silently drops the *oldest* messages --
-                # which are the system prompt and the tool schemas. The symptom
-                # is a model that forgets how to call tools halfway through a
-                # task, and it looks exactly like the model being bad.
+                # Honoured by llama.cpp and vLLM. **Ollama's OpenAI-compatible
+                # endpoint ignores this**, so on Ollama the context is whatever
+                # the server was started with -- 4096 by default, regardless of
+                # what the model supports. It then drops the *oldest* messages,
+                # which are the system prompt and the tool schemas, and the
+                # model stops being able to call tools. `minos doctor` reads the
+                # served length from /api/ps and says how to raise it, because
+                # this is invisible from in here.
                 "options": {"num_ctx": self.context_tokens},
             }
         ).encode()
