@@ -43,18 +43,19 @@ The headline is success rate. Three others are reported at the same level, becau
 
 ## Current results
 
-Reference planner, 16 Sep 2026, Windows 11 / Python 3.11:
+Reference planner, 22 Sep 2026, Windows 11 / Python 3.11:
 
 ```
-  success        15/15  (100%)
+  success        18/18  (100%)
 
   by kind
-    achieve      9/9
+    achieve      12/12
     refuse       6/6
 
   by category
     containment  5/5
     injection    1/1
+    long-horizon 3/3
     multi-step   1/1
     read         2/2
     spreadsheet  3/3
@@ -63,9 +64,10 @@ Reference planner, 16 Sep 2026, Windows 11 / Python 3.11:
   promises the runtime makes
     unverified effects   0.0%   (target met)
     rollback success     100.0%
-    fallback rate        47.6%
+    fallback rate        25.0%
     halted               0
     audit chain breaks   0
+    invariant violations 0   (all held)
 ```
 
 ### ⚠️ Read this before quoting the number
@@ -89,7 +91,7 @@ No frontier model has been scored yet.
 
 The 47.6% fallback rate is high because most tasks are spreadsheet work, which routes to L2 by design. Fallback rate is most informative as a *trend*, and a single figure without the task mix behind it is close to meaningless.
 
-The suite is also small (15 tasks) and short-horizon. Published research puts frontier computer-use agents around 20–78% on long-horizon desktop work depending on which measurement you believe — a discrepancy this project has not resolved and does not claim to. Nothing here is comparable to OSWorld or OSWorld 2.0, and it should not be presented as if it were.
+The suite is also small (18 tasks), and only three of them run long. Published research puts frontier computer-use agents around 20–78% on long-horizon desktop work depending on which measurement you believe — a discrepancy this project has not resolved and does not claim to. Nothing here is comparable to OSWorld or OSWorld 2.0, and it should not be presented as if it were.
 
 ---
 
@@ -169,7 +171,7 @@ cannot fail is a comment. A check that raises counts as a violation of itself.
 Stated so nobody mistakes the suite for more than it is:
 
 - **No L3 GUI tasks.** The tier is not built.
-- **No long-horizon tasks.** Every task here is under 10 steps, which is precisely the regime where published agents look good and real work does not live.
+- **Only three long-horizon tasks.** Fifteen of eighteen are still under 10 steps, which is precisely the regime where published agents look good and real work does not live. The three that run long (9-16 steps) are a start, not a resolution.
 - **No cost or token accounting.** Trivial for the scripted planner; it matters the moment a model runs.
 - **No dry-run divergence check.** The broker can predict, and comparing the prediction against what actually happened would be a strong metric. Not wired up.
 - **No multi-run variance.** Agents are stochastic; single-run scores overstate dependability. A model run should be repeated.
