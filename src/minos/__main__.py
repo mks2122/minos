@@ -308,6 +308,8 @@ def _planner(args: argparse.Namespace, operations: tuple[str, ...]):  # type: ig
             base_url=args.base_url,
             model=args.model or cfg.model,
             context_tokens=cfg.context_tokens,
+            timeout=cfg.planner_timeout,
+            thinking=cfg.thinking,
         )
     if choice != "claude":
         raise ImportError(f"unknown planner {choice!r}")

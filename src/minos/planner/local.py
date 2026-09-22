@@ -144,7 +144,19 @@ class LocalPlanner:
     base_url: str = DEFAULT_BASE_URL
     model: str = DEFAULT_MODEL
     temperature: float = 0.0
-    timeout: float = 300.0
+    timeout: float = 600.0
+    """Wall clock for one model call.
+
+    Generous because the floor is set by the slowest legitimate case -- a
+    reasoning model on a laptop GPU -- not by the median."""
+
+    thinking: bool = True
+    """Whether to let the model emit a reasoning block before answering.
+
+    The planner's job is to pick one of a dozen typed functions and fill in its
+    arguments, which rarely needs visible deliberation. Turning it off is worth
+    trying on a slow box -- but on qwen3:8b it was measured at no useful
+    benefit, so it is a knob and not a recommendation."""
     api_key: str = "not-needed"
     _messages: list[dict[str, Any]] = field(default_factory=list, init=False)
     _pending_tool_call_id: str | None = field(default=None, init=False)
@@ -207,6 +219,21 @@ class LocalPlanner:
             f"the local server at {self.base_url} returned HTTP {exc.code}: {detail or exc.reason}"
         )
 
+    def _explain_timeout(self, exc: BaseException) -> str:
+        """A slow model is not an absent server, and the fixes differ entirely.
+
+        Reasoning models are the usual cause: qwen3 and friends emit a long
+        `<think>` block before their first tool call, and on a laptop GPU that
+        alone can outlast a short timeout.
+        """
+        return (
+            f"the local model did not answer within {self.timeout:.0f}s ({exc}). "
+            "The server is reachable; it is still generating. "
+            "Raise MINOS_PLANNER_TIMEOUT, use a smaller model, or close whatever "
+            "else is competing for the GPU. MINOS_THINKING=0 is worth trying on "
+            "models that emit a long reasoning block first."
+        )
+
     def _installed_models(self) -> list[str]:
         """Best effort. A failure here must not replace the real error."""
         url = f"{self.base_url.rstrip('/')}/models"
@@ -265,7 +292,14 @@ class LocalPlanner:
             # someone to check a service that is fine, which is how a two-second
             # fix becomes an afternoon.
             return Done(summary=self._explain_http_error(exc), succeeded=False)
-        except (urllib.error.URLError, TimeoutError) as exc:
+        except TimeoutError as exc:
+            # The server was reachable and thinking. Asking whether it is
+            # running sends someone to check a service that is fine, and the
+            # actual fix -- more time, or less reasoning -- is nowhere in sight.
+            return Done(summary=self._explain_timeout(exc), succeeded=False)
+        except urllib.error.URLError as exc:
+            if isinstance(exc.reason, TimeoutError | OSError) and "timed out" in str(exc.reason):
+                return Done(summary=self._explain_timeout(exc), succeeded=False)
             return Done(
                 summary=(
                     f"could not reach the local model at {self.base_url}: {exc}. "
@@ -343,6 +377,11 @@ class LocalPlanner:
                 # served length from /api/ps and says how to raise it, because
                 # this is invisible from in here.
                 "options": {"num_ctx": self.context_tokens},
+                # Qwen3's documented switch, and ignored by servers and models
+                # that do not implement it. Measured on qwen3:8b here it made no
+                # useful difference -- 110s against 101s, inside the noise -- so
+                # it is offered as a knob rather than sold as a speed-up.
+                **({} if self.thinking else {"chat_template_kwargs": {"enable_thinking": False}}),
             }
         ).encode()
 
