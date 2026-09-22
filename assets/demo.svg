@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 574" width="880" height="574" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="13">
+  <title>minos converting a PDF to Word with a local 8B model, then undoing it</title>
+  <desc>Terminal recording: qwen3:8b chooses code.run, writes a conversion script itself, the broker admits and verifies it, then minos undo restores the previous state.</desc>
+
+  <rect width="880" height="574" rx="10" fill="#0d1117"/>
+  <rect width="880" height="34" rx="10" fill="#161b22"/>
+  <rect y="24" width="880" height="10" fill="#161b22"/>
+  <circle cx="20" cy="17" r="5.5" fill="#ff5f57"/>
+  <circle cx="39" cy="17" r="5.5" fill="#febc2e"/>
+  <circle cx="58" cy="17" r="5.5" fill="#28c840"/>
+  <text x="440" y="21" fill="#8b949e" text-anchor="middle" font-size="12">minos — convert report.pdf to Word, offline, on an 8 GB laptop</text>
+
+  <g fill="#c9d1d9">
+    <text x="20" y="62"><tspan fill="#58a6ff">$</tspan> <tspan fill="#e6edf3">minos run "convert report.pdf into a word document" -w ./data --allow-write</tspan></text>
+
+    <text x="20" y="90" fill="#8b949e">scopes    :</text>
+    <text x="40" y="108" fill="#7d8590">fs.read:E:\personal\minos\data/**</text>
+    <text x="40" y="126" fill="#7d8590">fs.write:E:\personal\minos\data/**</text>
+    <text x="40" y="144" fill="#7d8590">code.run:E:\personal\minos\.minos/**</text>
+
+    <text x="20" y="176" fill="#d2a8ff">[1] code.run</text>
+    <text x="60" y="194" fill="#8b949e">code:</text>
+    <text x="72" y="212"><tspan fill="#484f58">|</tspan> <tspan fill="#ff7b72">from</tspan> <tspan fill="#c9d1d9">pypdf</tspan> <tspan fill="#ff7b72">import</tspan> <tspan fill="#c9d1d9">PdfReader</tspan></text>
+    <text x="72" y="230"><tspan fill="#484f58">|</tspan> <tspan fill="#ff7b72">from</tspan> <tspan fill="#c9d1d9">docx</tspan> <tspan fill="#ff7b72">import</tspan> <tspan fill="#c9d1d9">Document</tspan></text>
+    <text x="72" y="248"><tspan fill="#484f58">|</tspan> <tspan fill="#c9d1d9">reader = PdfReader(</tspan><tspan fill="#a5d6ff">'materials/report.pdf'</tspan><tspan fill="#c9d1d9">)</tspan></text>
+    <text x="72" y="266"><tspan fill="#484f58">|</tspan> <tspan fill="#c9d1d9">doc = Document()</tspan></text>
+    <text x="72" y="284"><tspan fill="#484f58">|</tspan> <tspan fill="#ff7b72">for</tspan> <tspan fill="#c9d1d9">page</tspan> <tspan fill="#ff7b72">in</tspan> <tspan fill="#c9d1d9">reader.pages:</tspan></text>
+    <text x="72" y="302"><tspan fill="#484f58">|</tspan> <tspan fill="#c9d1d9">    doc.add_paragraph(page.extract_text())</tspan></text>
+    <text x="72" y="320"><tspan fill="#484f58">|</tspan> <tspan fill="#c9d1d9">doc.save(</tspan><tspan fill="#a5d6ff">'out/report.docx'</tspan><tspan fill="#c9d1d9">)</tspan></text>
+    <text x="60" y="342" fill="#8b949e">via L2.5 / l2.code</text>
+    <text x="60" y="360"><tspan fill="#7ee787">allowed</tspan><tspan fill="#8b949e">: within scope; effect is pure</tspan></text>
+    <text x="60" y="378"><tspan fill="#7ee787">-&gt; ok</tspan></text>
+
+    <text x="20" y="410" fill="#d2a8ff">[2] code.materialize</text>
+    <text x="60" y="428" fill="#8b949e">artifact: report.docx  →  data\report.docx</text>
+    <text x="60" y="446"><tspan fill="#7ee787">allowed</tspan><tspan fill="#8b949e">: within scope; effect is reversible</tspan></text>
+    <text x="60" y="464"><tspan fill="#7ee787">-&gt; ok</tspan><tspan fill="#8b949e">: 1 target(s) changed as declared</tspan></text>
+
+    <text x="20" y="494" fill="#7ee787" font-weight="bold">SUCCEEDED</text>
+
+    <text x="20" y="526"><tspan fill="#58a6ff">$</tspan> <tspan fill="#e6edf3">minos undo --last</tspan></text>
+    <text x="20" y="548"><tspan fill="#7ee787">  restored 1 target(s), verified</tspan><tspan fill="#8b949e">   ·   to reverse this undo: minos undo 40738562e892</tspan></text>
+  </g>
+</svg>
