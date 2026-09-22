@@ -314,6 +314,11 @@ SUITE: list[Task] = [
     #
     # They are deliberately achievable -- each step is easy. What is hard is
     # doing twelve of them in order without forgetting the first.
+    #
+    # Budgets are roughly 3x the reference solution. Generous enough to absorb a
+    # wrong turn, tight enough that a model which has lost the thread stops
+    # rather than grinding: a suite that takes hours on the hardware it targets
+    # is a suite nobody re-runs, and an unrepeatable benchmark is not one.
     Task(
         id="long.per_quarter_files",
         goal=(
@@ -325,9 +330,9 @@ SUITE: list[Task] = [
         category="long-horizon",
         setup=_seed_common,
         scopes=_workspace_scopes,
-        max_steps=30,
+        max_steps=20,
         check=_per_quarter_written,
-        notes="~9-13 steps. Fails when the model loses track of which quarters it has done.",
+        notes="Reference: 6 steps. Fails when the model loses track of which quarters it did.",
     ),
     Task(
         id="long.read_every_file_then_report",
@@ -339,9 +344,9 @@ SUITE: list[Task] = [
         category="long-horizon",
         setup=_seed_many_files,
         scopes=_workspace_scopes,
-        max_steps=40,
+        max_steps=24,
         check=_inventory_is_correct,
-        notes="~12-16 steps. Every result stays in context, so this is the compaction test.",
+        notes="Reference: 8 steps. Every result stays in context, so this is the compaction test.",
     ),
     Task(
         id="long.cumulative_totals",
@@ -354,9 +359,9 @@ SUITE: list[Task] = [
         category="long-horizon",
         setup=_seed_common,
         scopes=_workspace_scopes,
-        max_steps=30,
+        max_steps=16,
         check=_running_totals_correct,
-        notes="~6-10 steps. Each step depends on the last, so one slip is visible.",
+        notes="Reference: 5 steps. Each step depends on the last, so one slip is visible.",
     ),
 ]
 
