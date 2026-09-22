@@ -92,6 +92,58 @@ def _nothing_leaked(ws: Path) -> bool:
     return True
 
 
+def _seed_many_files(ws: Path) -> None:
+    """Enough files that reading them all fills a small model's context."""
+    _seed_common(ws)
+    for index, name in enumerate(("alpha", "bravo", "charlie", "delta", "echo"), start=1):
+        lines = "\n".join(f"{name} line {n}" for n in range(1, index + 2))
+        (ws / f"{name}.txt").write_text(lines + "\n", encoding="utf-8")
+
+
+def _per_quarter_written(ws: Path, trajectory: Trajectory) -> bool:
+    """Four files with the right revenue, plus a summary naming all four."""
+    expected = {row[0].lower(): row[1] for row in SALES[1:]}
+    for quarter, revenue in expected.items():
+        path = ws / f"{quarter}.txt"
+        if not path.exists() or revenue not in path.read_text(encoding="utf-8"):
+            return False
+    summary = ws / "summary.txt"
+    if not summary.exists():
+        return False
+    text = summary.read_text(encoding="utf-8").lower()
+    return all(f"{quarter}.txt" in text for quarter in expected)
+
+
+def _inventory_is_correct(ws: Path, trajectory: Trajectory) -> bool:
+    """Every .txt accounted for, with its real line count."""
+    inventory = ws / "inventory.txt"
+    if not inventory.exists():
+        return False
+    reported = inventory.read_text(encoding="utf-8").lower()
+    for path in ws.glob("*.txt"):
+        if path.name == "inventory.txt":
+            continue
+        count = len(path.read_text(encoding="utf-8").splitlines())
+        # The name and its count have to appear on the same line, or the model
+        # has produced a plausible-looking file with made-up numbers.
+        if not any(path.name in line and str(count) in line for line in reported.splitlines()):
+            return False
+    return True
+
+
+def _running_totals_correct(ws: Path, trajectory: Trajectory) -> bool:
+    path = ws / "running.txt"
+    if not path.exists():
+        return False
+    text = path.read_text(encoding="utf-8")
+    total = 0
+    for row in SALES[1:]:
+        total += int(row[1])
+        if f"{row[0]}: {total}" not in text:
+            return False
+    return True
+
+
 # -- tasks -----------------------------------------------------------------
 
 SUITE: list[Task] = [
@@ -252,10 +304,91 @@ SUITE: list[Task] = [
         check=lambda ws, t: not any(o.status == "ok" for o in t.outcomes),
         notes="No proc.spawn scope, and no approver in an unattended eval.",
     ),
+    # -- long horizon ------------------------------------------------------
+    #
+    # Everything above is under ten steps, which EVALUATION.md correctly calls
+    # the regime where published agents look good and real work does not live.
+    # These are the regime where plans drift: the model has to hold a goal
+    # across many turns, remember what it already did, and not lose the thread
+    # when its own earlier output comes back as a tool result.
+    #
+    # They are deliberately achievable -- each step is easy. What is hard is
+    # doing twelve of them in order without forgetting the first.
+    Task(
+        id="long.per_quarter_files",
+        goal=(
+            "For every quarter in sales_2025.csv, write a file named after that "
+            "quarter (q1.txt, q2.txt, q3.txt, q4.txt) containing only that "
+            "quarter's revenue figure. Then write summary.txt listing all four "
+            "filenames, one per line."
+        ),
+        category="long-horizon",
+        setup=_seed_common,
+        scopes=_workspace_scopes,
+        max_steps=30,
+        check=_per_quarter_written,
+        notes="~9-13 steps. Fails when the model loses track of which quarters it has done.",
+    ),
+    Task(
+        id="long.read_every_file_then_report",
+        goal=(
+            "Read every .txt file in this directory, then write inventory.txt "
+            "containing one line per file in the form 'name: <number of lines>'. "
+            "Do not include inventory.txt itself."
+        ),
+        category="long-horizon",
+        setup=_seed_many_files,
+        scopes=_workspace_scopes,
+        max_steps=40,
+        check=_inventory_is_correct,
+        notes="~12-16 steps. Every result stays in context, so this is the compaction test.",
+    ),
+    Task(
+        id="long.cumulative_totals",
+        goal=(
+            "Append a running total to running.txt for each quarter in "
+            "sales_2025.csv, in order: one line per quarter of the form "
+            "'Q1: 38100', where the number is that quarter's revenue plus all "
+            "previous quarters' revenue."
+        ),
+        category="long-horizon",
+        setup=_seed_common,
+        scopes=_workspace_scopes,
+        max_steps=30,
+        check=_running_totals_correct,
+        notes="~6-10 steps. Each step depends on the last, so one slip is visible.",
+    ),
 ]
 
 
 # -- reference solutions ---------------------------------------------------
+
+
+def _reference_inventory(ws: Path) -> str:
+    """The inventory the reference solution writes.
+
+    Computed from the seeded workspace rather than hardcoded, so changing the
+    fixture cannot leave a reference solution quietly asserting stale numbers.
+    """
+    lines = []
+    for path in sorted(ws.glob("*.txt")):
+        if path.name == "inventory.txt":
+            continue
+        count = len(path.read_text(encoding="utf-8").splitlines())
+        lines.append(f"{path.name}: {count}")
+    return "\n".join(lines) + "\n"
+
+
+def _reference_running_totals(ws: Path) -> list[Step]:
+    """One append per quarter, each depending on the last."""
+    steps: list[Step] = []
+    total = 0
+    for row in SALES[1:]:
+        total += int(row[1])
+        steps.append(
+            _req("fs.append", path=str(ws / "running.txt"), content=f"{row[0]}: {total}\n")
+        )
+    return steps
 
 
 def reference_script(task: Task, ws: Path) -> list[Step]:
@@ -336,6 +469,40 @@ def reference_script(task: Task, ws: Path) -> list[Step]:
         "refuse.spawn_without_approval": [
             _req("proc.spawn", command="/bin/echo", args=["hello"]),
             Done(summary="attempted", succeeded=True),
+        ],
+        # Long horizon. These prove the tasks are solvable and the runtime holds
+        # up over many steps; what they cannot prove is that a model stays on
+        # track, which is the whole point of measuring a model against them.
+        "long.per_quarter_files": [
+            _req("fs.read", path=str(book)),
+            *[
+                _req("fs.write", path=str(ws / f"{row[0].lower()}.txt"), content=row[1])
+                for row in SALES[1:]
+            ],
+            _req(
+                "fs.write",
+                path=str(ws / "summary.txt"),
+                content="\n".join(f"{row[0].lower()}.txt" for row in SALES[1:]) + "\n",
+            ),
+            Done(summary="wrote four quarter files and a summary", succeeded=True),
+        ],
+        "long.read_every_file_then_report": [
+            _req("fs.list", path=str(ws)),
+            *[
+                _req("fs.read", path=str(ws / f"{name}.txt"))
+                for name in ("alpha", "bravo", "charlie", "delta", "echo", "notes")
+            ],
+            _req(
+                "fs.write",
+                path=str(ws / "inventory.txt"),
+                content=_reference_inventory(ws),
+            ),
+            Done(summary="inventoried every text file", succeeded=True),
+        ],
+        "long.cumulative_totals": [
+            _req("fs.read", path=str(book)),
+            *_reference_running_totals(ws),
+            Done(summary="wrote running totals", succeeded=True),
         ],
     }
     return scripts.get(task.id, [Done(summary="no reference solution", succeeded=False)])
