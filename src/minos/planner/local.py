@@ -218,6 +218,36 @@ class LocalPlanner:
         except (urllib.error.URLError, TimeoutError, OSError, ValueError, KeyError):
             return []
 
+    def overhead_tokens(self) -> int:
+        """Rough size of what every request carries before any conversation.
+
+        Tool schemas plus the system prompt. Four characters to a token is crude
+        and good enough: the question is whether this is a tenth of the context
+        or two thirds of it, and that answer does not need a tokenizer.
+        """
+        tools = json.dumps(to_openai_tools(tool_definitions(self.operations)))
+        return (len(tools) + len(SYSTEM_PROMPT) + len(LOCAL_SYSTEM_SUFFIX)) // 4
+
+    def context_warning(self, served: int) -> str:
+        """Say so when the fixed overhead leaves almost no room to work.
+
+        This is invisible from inside a run: the server truncates silently and
+        the model simply starts behaving worse. Measured against what the server
+        actually serves, not what was asked for, because on Ollama those differ.
+        """
+        if served <= 0:
+            return ""
+        overhead = self.overhead_tokens()
+        room = served - overhead
+        if room > overhead:
+            return ""
+        return (
+            f"the tool schemas and system prompt are ~{overhead} tokens of a "
+            f"{served}-token context, leaving only ~{max(room, 0)} for the task. "
+            "Expect truncation and poor tool calling. "
+            f"Fix: OLLAMA_CONTEXT_LENGTH={max(overhead * 3, 8192)} ollama serve"
+        )
+
     def next_action(self, goal: str, observations: list[Observation], scopes: ScopeSet) -> Step:
         if not self._messages:
             self._messages.append(
@@ -390,7 +420,22 @@ class LocalPlanner:
         if observation.error:
             payload["error"] = observation.error
         if observation.result is not None:
-            payload["result"] = _cap(_jsonable(observation.result), self.max_result_chars)
+            result = _cap(_jsonable(observation.result), self.max_result_chars)
+            # The operation succeeding and the *script* succeeding are different
+            # things. Without this the model reads "status: ok", concludes the
+            # work is done, and retries the identical broken script.
+            if isinstance(result, dict) and result.get("ok") is False:
+                payload["status"] = "the sandbox ran, but YOUR SCRIPT FAILED"
+                payload["fix_this"] = result.get("detail") or result.get("stderr", "")
+            names = _artifact_names(result)
+            if names is not None:
+                # Hoisted out of the nested result object. A model that cannot
+                # see what it produced invents a filename, and an invented name
+                # is denied by the broker for reasons it cannot work out.
+                payload["artifacts_you_can_materialize"] = names or (
+                    "none -- your script wrote nothing into out/"
+                )
+            payload["result"] = result
         return {
             "role": "tool",
             "tool_call_id": self._pending_tool_call_id or "unknown",
@@ -399,6 +444,17 @@ class LocalPlanner:
                 + json.dumps(payload, indent=2, default=str)
             ),
         }
+
+
+def _artifact_names(result: Any) -> list[str] | str | None:
+    """The names a materialize call may legally use, or None if not a sandbox run."""
+    if not isinstance(result, dict) or "artifacts" not in result:
+        return None
+    names = []
+    for artifact in result.get("artifacts") or []:
+        if isinstance(artifact, dict) and artifact.get("relative"):
+            names.append(str(artifact["relative"]))
+    return names
 
 
 def _cap(value: Any, limit: int) -> Any:
@@ -412,6 +468,12 @@ def _cap(value: Any, limit: int) -> Any:
         return value[:limit] + f" ... [truncated, {dropped} more characters]"
     if isinstance(value, list) and len(value) > 200:
         return [*value[:200], f"... [{len(value) - 200} more items]"]
+    if isinstance(value, dict):
+        # A sandbox result is a dict whose stderr can be enormous. Capping only
+        # the top-level string would leave exactly that case uncapped.
+        return {k: _cap(v, limit) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_cap(v, limit) for v in value]
     return value
 
 

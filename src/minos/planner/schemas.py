@@ -156,14 +156,26 @@ _SCHEMAS: dict[str, dict[str, Any]] = {
         (
             "Save a file the sandbox produced onto the real filesystem. This is "
             "the only way sandbox output reaches the user, and it is an ordinary "
-            "write: it is checkpointed, verified and undoable."
+            "write: it is checkpointed, verified and undoable. "
+            "'artifact' MUST be one of the names listed under 'artifacts' in the "
+            "code_run result you just received. Do not invent a name. 'path' MUST "
+            "be a full absolute path including the filename, inside your scopes."
         ),
         {
+            # No concrete example here on purpose: a small model copies whatever
+            # example it is shown, and a plausible-looking filename it never
+            # produced is worse than a missing argument -- the broker denies it
+            # and the model has no idea why.
             "artifact": {
                 "type": "string",
-                "description": "Path within 'out/', e.g. 'report.docx'.",
+                "description": "A name from the 'artifacts' list in the code_run result.",
             },
-            "path": _PATH,
+            "path": {
+                "type": "string",
+                "description": (
+                    "Absolute destination path, including the filename. Must be within your scopes."
+                ),
+            },
         },
         ["artifact", "path"],
     ),

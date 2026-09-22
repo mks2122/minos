@@ -128,11 +128,22 @@ class Agent:
                 outcome.decision.rationale,
                 verdict=outcome.decision.verdict,
             )
+            # An admitted action can succeed while the thing it ran fails -- a
+            # sandboxed script is the case that matters. Showing "ok" there is
+            # how a watcher misses the model retrying the same broken script.
+            inner_failed = getattr(outcome.result, "ok", None) is False
+            if inner_failed:
+                detail = _last_line(
+                    getattr(outcome.result, "detail", "") or getattr(outcome.result, "stderr", "")
+                )
+            else:
+                detail = outcome.error or (outcome.observed.detail if outcome.observed else "")
+
             self._emit(
                 "result",
                 number,
-                outcome.error or (outcome.observed.detail if outcome.observed else ""),
-                status=outcome.status,
+                detail,
+                status="script failed" if inner_failed else outcome.status,
                 checkpoint=outcome.checkpoint_id,
                 reversed_=(outcome.reversal.succeeded if outcome.reversal else None),
             )
@@ -171,6 +182,12 @@ class Agent:
         )
         self._emit("finish", self.limits.max_steps, trajectory.finished.summary, succeeded=False)
         return trajectory
+
+
+def _last_line(text: object) -> str:
+    """The final line of a traceback, which is the part that says what broke."""
+    lines = str(text or "").strip().splitlines()
+    return lines[-1].strip() if lines else "the script failed"
 
 
 def _denial_key(request: ActionRequest) -> tuple[str, str]:

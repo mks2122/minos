@@ -228,3 +228,45 @@ def test_thinking_is_captured_onto_the_planner():
 
     assert hasattr(p, "last_thinking")
     assert p.last_thinking == ""
+
+
+# -- the overhead warning --------------------------------------------------
+
+
+def test_the_schema_overhead_is_measured():
+    """Two thirds of a 4096 context before the task even starts."""
+    p = LocalPlanner(
+        operations=(
+            "fs.read",
+            "fs.write",
+            "fs.list",
+            "sheet.set_cell",
+            "code.run",
+            "code.materialize",
+            "app.open",
+        )
+    )
+
+    assert p.overhead_tokens() > 500
+
+
+def test_a_cramped_context_warns_with_the_fix():
+    p = LocalPlanner(operations=("fs.read", "fs.write", "code.run", "code.materialize"))
+
+    warning = p.context_warning(served=1024)
+
+    assert "OLLAMA_CONTEXT_LENGTH" in warning
+    assert "truncation" in warning
+
+
+def test_a_roomy_context_is_silent():
+    p = LocalPlanner(operations=("fs.read",))
+
+    assert p.context_warning(served=32768) == ""
+
+
+def test_an_unknown_context_is_silent():
+    """Non-Ollama servers report nothing. A false alarm is worse than none."""
+    p = LocalPlanner(operations=("fs.read",))
+
+    assert p.context_warning(served=0) == ""

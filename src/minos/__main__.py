@@ -175,6 +175,13 @@ def cmd_run(args: argparse.Namespace) -> int:
         limits=AgentLimits(max_steps=args.max_steps),
     )
 
+    # A context too small to hold the tool schemas is invisible at runtime: the
+    # server truncates silently and the model simply gets worse at its job. Say
+    # it before the run rather than leaving someone to conclude the model is bad.
+    warning = _context_warning(planner, args.base_url)
+    if warning:
+        print(f"\n  !! {warning}")
+
     print(f"\ngoal      : {args.goal}")
     print(f"workspace : {workspace}")
     print("scopes    :")
@@ -249,6 +256,21 @@ def cmd_run(args: argparse.Namespace) -> int:
         print(f"  watcher: {problem}", file=sys.stderr)
 
     return 0 if trajectory.succeeded else 1
+
+
+def _context_warning(planner: Any, base_url: str) -> str:
+    """Compare the planner's fixed overhead against what the server really serves."""
+    check = getattr(planner, "context_warning", None)
+    if check is None:
+        return ""
+    from .doctor import _served_context
+
+    try:
+        served = _served_context(base_url, getattr(planner, "model", ""))
+        return str(check(served))
+    except Exception:
+        # A diagnostic that breaks the run it is diagnosing is worse than none.
+        return ""
 
 
 def _planner(args: argparse.Namespace, operations: tuple[str, ...]):  # type: ignore[no-untyped-def]
