@@ -254,3 +254,39 @@ def test_cli_undo_with_no_state_is_an_error(tmp_path, capsys):
 
     assert main(["undo", "--state", str(tmp_path / "nope")]) == 2
     assert "no audit log" in capsys.readouterr().err
+
+
+# -- undoing an undo is a redo, not the same undo again ---------------------
+
+
+def test_undoing_an_undo_redoes_it(broker, acted):
+    """`minos undo` lists past undos too, so they must mean the right thing.
+
+    Recording the restored-from checkpoint would make undoing an undo apply
+    the same undo a second time -- a no-op that looks like a redo.
+    """
+    assert acted.read_text() == "what the agent wrote"
+
+    first = find(broker.audit, broker.store, "last")
+    perform_undo(broker.audit, broker.store, first)
+    assert acted.read_text() == "the original text"
+
+    # The undo is now itself the most recent undoable action.
+    second = find(broker.audit, broker.store, "last")
+    assert second.operation == "state.undo"
+
+    result, _ = perform_undo(broker.audit, broker.store, second)
+
+    assert result.succeeded
+    assert acted.read_text() == "what the agent wrote", "undoing the undo should redo"
+
+
+def test_the_redo_checkpoint_is_what_gets_recorded(broker, acted):
+    action = find(broker.audit, broker.store, "last")
+    original_checkpoint = action.checkpoint_id
+
+    _, redo_id = perform_undo(broker.audit, broker.store, action)
+
+    recorded = broker.audit.entries()[-1]["checkpoint_id"]
+    assert recorded == redo_id
+    assert recorded != original_checkpoint

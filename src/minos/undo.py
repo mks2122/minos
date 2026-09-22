@@ -166,7 +166,7 @@ def perform_undo(
             detail="restore reported success but verification failed",
         )
 
-    _record(audit, action, result, verified)
+    _record(audit, action, result, verified, redo_id)
     return result, redo_id
 
 
@@ -175,6 +175,7 @@ def _record(
     action: Undoable,
     result: RestoreResult,
     verified: bool,
+    redo_id: str | None = None,
 ) -> None:
     """Write the undo into the chain, as a human-initiated action."""
     request = ActionRequest(
@@ -206,7 +207,11 @@ def _record(
             ts=ProvenanceRecord.now(),
             invocation=invocation,
             decision=decision,
-            checkpoint_id=action.checkpoint_id,
+            # The *redo* checkpoint, not the one this undo restored from.
+            # Undoing an undo has to mean putting things back as they were
+            # before the undo -- recording the original here would make
+            # `minos undo` offer to apply the same undo a second time.
+            checkpoint_id=redo_id or action.checkpoint_id,
             observed=None,
             reversal=ReversalOutcome(
                 attempted=True,
