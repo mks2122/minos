@@ -1,6 +1,6 @@
 # Status
 
-Last updated 21 Sep 2026. **628 tests passing, 4 skipped. Eval 15/15, no regressions,
+Last updated 22 Sep 2026. **692 tests passing, 4 skipped. Reference eval 18/18,
 0 invariant violations. Ruff clean, mypy strict clean.**
 
 Written so nobody has to guess which parts are real.
@@ -31,6 +31,10 @@ Written so nobody has to guess which parts are real.
 | **Locking** | One writer per state directory, `O_EXCL`, with stale-lock reclaim. Concurrent runs can no longer break the hash chain |
 | **Config** | `.env` + environment + defaults, local-model-first; secrets redacted in `doctor` output |
 | **Invariants** | 11 runtime promises checked against every task on every eval run, reported separately from task success |
+| **Live trace** | Every step printed as it happens -- the model's reasoning, the code it wrote, the verdict, the result |
+| **Session transcripts** | `.minos/sessions/*.jsonl`, pruned to 20. A debugging record, deliberately *not* the audit chain |
+| **Context management** | Result caps, conversation compaction, and a warning when the tool schemas crowd out the task |
+| **Long-horizon tasks** | 3 in the suite at 9-16 steps, with unfoolable checks |
 
 ## Stubbed or absent
 
