@@ -245,3 +245,73 @@ def test_the_planner_is_told_to_prefer_names():
 
     assert "element" in click["input_schema"]["properties"]
     assert "silently" in click["description"]
+
+
+# -- COM returns NULL pointers, not None -----------------------------------
+#
+# Both bugs below were invisible until the tree was pointed at a real desktop:
+# M22 only ever tested against a fake. They are kept as unit tests because a
+# live accessibility tree is not something CI can rely on.
+
+
+def test_a_null_native_element_is_skipped_not_dereferenced():
+    """comtypes yields a NULL *pointer object* for a childless element.
+
+    It is not None, so `is not None` passes -- and the next attribute access
+    raises COMError('Invalid pointer'). Truthiness is the only check that works.
+    """
+    from minos.tiers.l3_gui.uia import _to_element
+
+    class NullPointer:
+        def __bool__(self):
+            return False
+
+        def __getattr__(self, name):
+            raise OSError("Invalid pointer")
+
+    assert _to_element(NullPointer()) is None
+
+
+def test_an_element_that_raises_midway_is_skipped():
+    """A node can go stale between being walked and being read."""
+    from minos.tiers.l3_gui.uia import _to_element
+
+    class Stale:
+        def __bool__(self):
+            return True
+
+        @property
+        def CurrentBoundingRectangle(self):
+            raise OSError("element no longer available")
+
+    assert _to_element(Stale()) is None
+
+
+def test_walking_a_falsy_node_returns_nothing(monkeypatch):
+    from minos.tiers.l3_gui import uia
+
+    class Tree(uia.UiaTree):
+        def __init__(self):
+            self._automation = None
+            self.name = "fake"
+
+    class NullNode:
+        def __bool__(self):
+            return False
+
+    assert Tree()._walk(NullNode()) == []
+
+
+def test_the_focused_window_is_the_window_not_the_focused_control():
+    """GetFocusedElement returns a control, whose subtree is usually empty.
+
+    Walking from there finds nothing and is indistinguishable from an app with
+    no accessibility support -- so the root is resolved from the window handle.
+    """
+    import inspect
+
+    from minos.tiers.l3_gui.uia import UiaTree
+
+    source = inspect.getsource(UiaTree._root)
+    assert "GetForegroundWindow" in source
+    assert "ElementFromHandle" in source

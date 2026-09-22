@@ -199,12 +199,30 @@ class UiaTree:
     # -- internals ---------------------------------------------------------
 
     def _root(self, window: str) -> Any:
+        """The element whose subtree holds the controls a task means.
+
+        For the focused window that is the *window*, reached through its
+        handle -- not ``GetFocusedElement``, which returns the focused control.
+        A focused button has no children, so walking from there finds nothing
+        and looks exactly like an application with no accessibility support.
+        """
         try:
             if window in ("", "*"):
-                return self._automation.GetFocusedElement()
-            return self._automation.GetRootElement()
+                import ctypes
+
+                # getattr keeps this typecheckable off Windows, where windll
+                # does not exist; CI runs mypy on all three platforms.
+                user32 = getattr(ctypes, "windll").user32  # noqa: B009
+                handle = user32.GetForegroundWindow()
+                root = self._automation.ElementFromHandle(handle) if handle else None
+            else:
+                root = self._automation.GetRootElement()
         except (OSError, AttributeError):  # pragma: no cover - COM teardown
             return None
+        # A COM call returns a NULL *pointer object*, never None, so `is None`
+        # is always False and the next attribute access dereferences null.
+        # Truthiness is the only check that works here.
+        return root if root else None
 
     def _walk(self, node: Any, depth: int = 0) -> list[Element]:
         """Flatten the tree, bounded.
@@ -216,6 +234,8 @@ class UiaTree:
         if depth > _MAX_DEPTH:
             return []
         found: list[Element] = []
+        if not node:
+            return found
         try:
             children = self._automation.ControlViewWalker
             child = children.GetFirstChildElement(node)
@@ -223,7 +243,10 @@ class UiaTree:
             return []
 
         count = 0
-        while child is not None and count < _MAX_SIBLINGS:
+        # `while child` and not `while child is not None`: a childless element
+        # yields a NULL pointer object, which is not None but is falsy, and
+        # dereferencing it raises COMError('Invalid pointer').
+        while child and count < _MAX_SIBLINGS:
             element = _to_element(child)
             if element is not None:
                 found.append(element)
@@ -242,6 +265,8 @@ _INVOKE_PATTERN_ID = 10000
 
 
 def _to_element(native: Any) -> Element | None:
+    if not native:
+        return None
     try:
         rect = native.CurrentBoundingRectangle
         return Element(
@@ -255,7 +280,7 @@ def _to_element(native: Any) -> Element | None:
             invokable=bool(native.CurrentIsKeyboardFocusable),
             _native=native,
         )
-    except (OSError, AttributeError, ValueError):  # pragma: no cover - stale node
+    except (OSError, AttributeError, ValueError, TypeError):  # stale or NULL node
         return None
 
 
