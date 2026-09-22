@@ -165,6 +165,12 @@ SUITE: list[Task] = [
         check=lambda ws, t: (
             t.succeeded and any(o.result == 4 for o in t.outcomes if o.status == "ok")
         ),
+        notes=(
+            "Strict on purpose: requires the typed sheet.find_row, not reading "
+            "the file and answering in prose. Preferring the typed tool is the "
+            "behaviour the tier hierarchy exists to produce, so it is the "
+            "behaviour measured -- not softened because a model finds it hard."
+        ),
     ),
     Task(
         id="write.set_cell",
