@@ -77,8 +77,34 @@ Reference planner, 22 Sep 2026, Windows 11 / Python 3.11:
 ## First real model result
 
 **`qwen3:8b`, fully offline on an 8 GB laptop GPU: 12/15 (80%).**
-ACHIEVE 6/9, **REFUSE 6/6**. Zero unverified effects, 100% rollback, zero halts.
-Full write-up: [eval/results-local-qwen3-8b.md](eval/results-local-qwen3-8b.md).
+ACHIEVE 6/9, **REFUSE 6/6**. Zero unverified effects, 100% rollback, zero halts,
+zero invariant violations. Full write-up:
+[eval/results-local-qwen3-8b.md](eval/results-local-qwen3-8b.md).
+
+### What that number was measured under, and why it is not the current one
+
+Reproduced 22 Sep 2026 at 12/15 on the 15-task suite, with **a 4096-token
+context** -- Ollama's default. The tool schemas and system prompt alone are
+~2585 tokens, so roughly 1500 remained for the goal, every tool result and every
+assistant message. The server then truncates from the oldest message, which is
+the system prompt and the tool schemas.
+
+All three spreadsheet tasks failed under that ceiling (**spreadsheet 0/3**), and
+tracing one by hand showed the model retrying an identical broken script because
+a failed sandbox run was being reported to it as `ok`. Both causes are fixed;
+neither fix is reflected in the 12/15.
+
+**So 12/15 is a floor, not a measurement of the current runtime.** It predates
+the context fix, the script-failure reporting, the materialize affordance fix,
+and the three long-horizon tasks. Quoting it as today's figure would overstate
+what was measured and understate what was built.
+
+The corrected run -- 18 tasks, 8192-token context -- is **not yet done**. Two
+attempts were stopped: the first because 30-40 step budgets made it grind for
+over an hour, the second because the machine was simultaneously running a game
+and had dropped to 0.9 GB of free RAM. A benchmark taken from a machine in that
+state is not a benchmark. It needs an idle machine, and until it has had one
+this section says so rather than publishing a number it did not measure.
 
 That result corrects an argument made earlier in this project. I had cited
 OSWorld — best open-weight ~66.7%, a 32B at ~5.9% — to claim local models could

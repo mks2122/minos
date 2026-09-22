@@ -79,6 +79,20 @@ a remote model. See [LOCAL.md](LOCAL.md).
 - **The eval suite is short-horizon.** Every task is under 10 steps, which is the regime where
   published agents look good and real work does not live.
 
+## Alpha readiness
+
+Three criteria were set for leaving pre-alpha. Two are met.
+
+| | |
+|---|---|
+| A model completes a real task end to end | **Met.** `qwen3:8b` converted a PDF to a Word document unaided -- chose `code.run`, wrote the script itself, promoted it through the broker, verified, then undone with the audit chain intact |
+| Long-horizon tasks in the suite | **Met.** Three at 9-16 reference steps, with checks a plausible-looking wrong answer cannot pass |
+| A model scored on the *current* suite, published | **Not met.** See [EVALUATION.md](../EVALUATION.md) -- 12/15 exists but predates the context fix and the 18-task suite. The corrected run needs an idle machine |
+
+The third is blocked on hardware availability, not on code. Until it is done
+this stays pre-alpha, because the version number is a claim about evidence and
+the evidence is not in.
+
 ## Next
 
 M17–M25 are done; see [PLAN-GENERALITY.md](PLAN-GENERALITY.md) for what they were
