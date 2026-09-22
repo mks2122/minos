@@ -34,6 +34,35 @@ To make that a guarantee rather than a preference, turn on offline mode — Sett
 
 ---
 
+## Context length: the setting that decides whether tool calling works
+
+The tool schemas and system prompt are **~2600 tokens before your task starts**.
+Ollama serves **4096 by default**, whatever the model supports. That leaves
+roughly 1500 tokens for the goal, every tool result and every reply -- and when
+it runs out, the server truncates from the *oldest* message, which is the system
+prompt and the tool schemas. The model stops being able to call tools, and it
+looks exactly like the model being bad at its job.
+
+**Ollama's OpenAI-compatible endpoint ignores per-request context settings**, so
+asking for more in the request does nothing. Set it on the server:
+
+```bash
+OLLAMA_CONTEXT_LENGTH=6144 ollama serve
+```
+
+Measured on an 8 GB laptop GPU with `qwen3:8b`:
+
+| Context | Footprint | Placement |
+|---|---|---|
+| 4096 | 5.6 GB | 100% GPU -- but only ~1500 tokens to work in |
+| **6144** | **5.9 GB** | **100% GPU. The sweet spot on 8 GB** |
+| 8192 | 6.6 GB | 16% spills to CPU |
+| 16384 | 7.8 GB | 20% spills to CPU, and noticeably slower |
+
+`minos doctor` reads what your server is actually serving and warns when it
+disagrees with `MINOS_CONTEXT_TOKENS`, because this is otherwise invisible until
+your tasks quietly start failing.
+
 ## Why an 8B is enough here
 
 This is the part that surprised me, and it is worth understanding before picking a model.
