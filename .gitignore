@@ -28,3 +28,6 @@ sandbox/
 !.env.example
 .DS_Store
 Thumbs.db
+
+# Eval run logs. The JSON results are committed; the console output is not.
+eval/*.log
