@@ -44,6 +44,7 @@ DEFAULTS: dict[str, str] = {
     "MINOS_SANDBOX_TIMEOUT": "60",
     "MINOS_CHECKPOINT_DAYS": "7",
     "MINOS_CHECKPOINT_GB": "2",
+    "MINOS_CONTEXT_TOKENS": "16384",
 }
 """Every knob, with the value you get if you set nothing.
 
@@ -106,6 +107,7 @@ class Settings:
     sandbox_timeout: float
     checkpoint_days: float
     checkpoint_gb: float
+    context_tokens: int
     source: dict[str, str] = field(default_factory=dict, repr=False)
     """Where each value came from, for `minos doctor`. Names only, no values."""
 
@@ -184,5 +186,6 @@ def settings(dotenv: Path | str | None = ".env") -> Settings:
         sandbox_timeout=_as_float(values["MINOS_SANDBOX_TIMEOUT"], 60.0),
         checkpoint_days=_as_float(values["MINOS_CHECKPOINT_DAYS"], 7.0),
         checkpoint_gb=_as_float(values["MINOS_CHECKPOINT_GB"], 2.0),
+        context_tokens=int(_as_float(values["MINOS_CONTEXT_TOKENS"], 16384)),
         source=source,
     )

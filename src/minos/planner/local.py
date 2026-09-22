@@ -93,6 +93,30 @@ def server_available(base_url: str = DEFAULT_BASE_URL, timeout: float = 1.5) -> 
         return False
 
 
+def _readable_thinking(content: Any) -> str:
+    """Normalise a model's commentary into something worth printing.
+
+    Reasoning models wrap their working in ``<think>`` tags, and some servers
+    return content as a list of parts rather than a string. Both are unwrapped
+    here so the caller has one thing to display.
+    """
+    if isinstance(content, list):
+        content = " ".join(part.get("text", "") for part in content if isinstance(part, dict))
+    text = str(content or "").strip()
+    if not text:
+        return ""
+
+    # <think>...</think> is the common convention; keep the inside, drop the tags.
+    for opener, closer in (("<think>", "</think>"), ("<thinking>", "</thinking>")):
+        if opener in text:
+            start = text.index(opener) + len(opener)
+            end = text.index(closer) if closer in text else len(text)
+            inner = text[start:end].strip()
+            rest = (text[end + len(closer) :] if closer in text else "").strip()
+            text = f"{inner}\n{rest}".strip() if rest else inner
+    return text
+
+
 def to_openai_tools(tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Anthropic tool shape -> OpenAI function shape.
 
@@ -124,6 +148,31 @@ class LocalPlanner:
     api_key: str = "not-needed"
     _messages: list[dict[str, Any]] = field(default_factory=list, init=False)
     _pending_tool_call_id: str | None = field(default=None, init=False)
+
+    context_tokens: int = 16384
+    """Context window to ask the server for.
+
+    Ollama's default is 4096 whatever the model supports. Raising it costs VRAM
+    for the KV cache -- roughly 1-2 GB at this size -- which is why it is a knob
+    rather than a maximum."""
+
+    max_result_chars: int = 4000
+    """Cap on one tool result entering the context.
+
+    ``fs.read`` of a large file would otherwise put the whole thing in the
+    conversation and evict the tool schemas. The model is told the result was
+    truncated, because silently handing it half a file and letting it believe
+    it has all of one is how wrong answers get produced confidently."""
+
+    keep_exchanges: int = 6
+    """Recent tool exchanges kept verbatim before older ones are summarised."""
+
+    last_thinking: str = field(default="", init=False)
+    """What the model said while choosing its last action.
+
+    Read by the agent's observer so a watcher can see *why*, not just *what*.
+    Untrusted like everything else the planner produces -- it is displayed, never
+    acted on."""
 
     # -- Planner protocol --------------------------------------------------
 
@@ -203,6 +252,12 @@ class LocalPlanner:
         message = payload["choices"][0]["message"]
         self._messages.append(message)
 
+        # Keep whatever the model said alongside its tool call. Reasoning models
+        # put their working here, and throwing it away leaves a watcher with no
+        # idea why the agent chose what it chose -- which is most of what you
+        # want to see when a run goes wrong.
+        self.last_thinking = _readable_thinking(message.get("content"))
+
         calls = message.get("tool_calls") or []
         if not calls:
             text = (message.get("content") or "").strip()
@@ -244,11 +299,17 @@ class LocalPlanner:
         body = json.dumps(
             {
                 "model": self.model,
-                "messages": self._messages,
+                "messages": self._compacted(),
                 "tools": to_openai_tools(tool_definitions(self.operations)),
                 "tool_choice": "auto",
                 "temperature": self.temperature,
                 "stream": False,
+                # Ollama defaults num_ctx to 4096 regardless of what the model
+                # supports, and then silently drops the *oldest* messages --
+                # which are the system prompt and the tool schemas. The symptom
+                # is a model that forgets how to call tools halfway through a
+                # task, and it looks exactly like the model being bad.
+                "options": {"num_ctx": self.context_tokens},
             }
         ).encode()
 
@@ -273,6 +334,51 @@ class LocalPlanner:
             "Call exactly one tool."
         )
 
+    def _compacted(self) -> list[dict[str, Any]]:
+        """The conversation, trimmed to fit.
+
+        Growth is unbounded otherwise: every step appends an assistant message
+        and a tool result, and a long task eventually pushes the system prompt
+        and tool schemas out of the window. Those are the two things that must
+        never be evicted, so compaction happens here rather than being left to
+        the server's blunt oldest-first truncation.
+
+        The rule: keep the system prompt and the opening goal always, keep the
+        last few exchanges verbatim, and replace everything between them with
+        one line naming what happened. A model that can see *that* it did six
+        things, and what they were, plans better than one whose history simply
+        stops.
+        """
+        if len(self._messages) <= 2 + self.keep_exchanges * 2:
+            return self._messages
+
+        head = self._messages[:2]  # system + the goal
+        tail = self._messages[-self.keep_exchanges * 2 :]
+        middle = self._messages[2 : -self.keep_exchanges * 2]
+
+        done: list[str] = []
+        for message in middle:
+            for call in message.get("tool_calls") or []:
+                name = call.get("function", {}).get("name")
+                if name:
+                    done.append(str(name))
+        if not done:
+            return head + tail
+
+        note = {
+            "role": "user",
+            "content": (
+                f"[{len(done)} earlier steps are omitted to save context. "
+                f"In order, you called: {', '.join(done)}. "
+                "Do not repeat work you have already done.]"
+            ),
+        }
+        # A tool result must directly follow its call, so never begin the tail
+        # on an orphaned one -- some servers reject the whole request for it.
+        while tail and tail[0].get("role") == "tool":
+            tail = tail[1:]
+        return [*head, note, *tail]
+
     def _tool_result(self, observation: Observation) -> dict[str, Any]:
         payload: dict[str, Any] = {
             "status": observation.status,
@@ -281,7 +387,7 @@ class LocalPlanner:
         if observation.error:
             payload["error"] = observation.error
         if observation.result is not None:
-            payload["result"] = _jsonable(observation.result)
+            payload["result"] = _cap(_jsonable(observation.result), self.max_result_chars)
         return {
             "role": "tool",
             "tool_call_id": self._pending_tool_call_id or "unknown",
@@ -290,6 +396,20 @@ class LocalPlanner:
                 + json.dumps(payload, indent=2, default=str)
             ),
         }
+
+
+def _cap(value: Any, limit: int) -> Any:
+    """Keep a tool result inside its budget, and say so when it is trimmed.
+
+    Silence would be worse than truncation: a model handed half a file that
+    believes it has all of one answers confidently and wrongly.
+    """
+    if isinstance(value, str) and len(value) > limit:
+        dropped = len(value) - limit
+        return value[:limit] + f" ... [truncated, {dropped} more characters]"
+    if isinstance(value, list) and len(value) > 200:
+        return [*value[:200], f"... [{len(value) - 200} more items]"]
+    return value
 
 
 def _parse_arguments(raw: Any) -> dict[str, Any]:

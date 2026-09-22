@@ -167,6 +167,7 @@ class EffectContract:
 
     @property
     def change_expected(self) -> bool:
+        """Whether the oracle should see a difference for this action to count as done."""
         if self.expects_change is not None:
             return self.expects_change
         return self.effect_class is not EffectClass.PURE
@@ -226,6 +227,8 @@ class Invocation:
 
 @dataclass(frozen=True, slots=True)
 class AdmissionDecision:
+    """The broker's ruling on one invocation, and the reason for it."""
+
     verdict: Verdict
     rationale: str
     """Human-readable. Shown verbatim in the approval prompt, so write it for a person."""
@@ -235,11 +238,18 @@ class AdmissionDecision:
 
     @property
     def permitted(self) -> bool:
+        """True when the action may proceed without a further prompt."""
         return self.verdict == "allow"
 
 
 @dataclass(frozen=True, slots=True)
 class ReversalOutcome:
+    """What happened when the runtime tried to put an effect back.
+
+    ``attempted`` and ``succeeded`` are separate because "we did not try" and
+    "we tried and failed" leave the world in very different states.
+    """
+
     attempted: bool
     succeeded: bool
     detail: str = ""
@@ -290,4 +300,5 @@ class ProvenanceRecord:
 
     @staticmethod
     def now() -> datetime:
+        """The timestamp source for new entries, as timezone-aware UTC."""
         return datetime.now(UTC)

@@ -37,9 +37,11 @@ class FileHashOracle:
     kind: str = field(default="file_hash", init=False)
 
     def observe(self) -> dict[str, Any]:
+        """Digest per declared path. ``None`` where the file is absent or unreadable."""
         return {str(p): file_digest(Path(p).expanduser().resolve()) for p in self.paths}
 
     def verifiable(self) -> bool:
+        """Always true: a content hash is a system-of-record read."""
         return True
 
 
@@ -59,6 +61,12 @@ class FileTreeOracle:
     kind: str = field(default="file_tree", init=False)
 
     def observe(self) -> dict[str, Any]:
+        """Digest every file under the root, flagging truncation past ``max_entries``.
+
+        Truncation is reported rather than silent: a partial manifest cannot
+        prove the absence of collateral damage, and pretending otherwise is the
+        failure this oracle exists to catch.
+        """
         root = Path(self.root).expanduser().resolve()
         manifest: dict[str, Any] = {}
         count = 0
@@ -75,6 +83,7 @@ class FileTreeOracle:
         return {"_files": manifest, "_truncated": truncated}
 
     def verifiable(self) -> bool:
+        """Always true: the manifest is read from the filesystem itself."""
         return True
 
     def collateral(self, before: dict[str, Any], after: dict[str, Any]) -> list[str]:
@@ -99,6 +108,7 @@ class PathExistsOracle:
     kind: str = field(default="path_exists", init=False)
 
     def observe(self) -> dict[str, Any]:
+        """Map each path to ``"dir"``, ``"file"``, or ``None`` when it is absent."""
         out: dict[str, Any] = {}
         for raw in self.paths:
             path = Path(raw).expanduser().resolve()
@@ -111,6 +121,7 @@ class PathExistsOracle:
         return out
 
     def verifiable(self) -> bool:
+        """Always true: existence is read from the filesystem itself."""
         return True
 
 
@@ -122,9 +133,11 @@ class NullOracle:
     kind: str = field(default="null", init=False)
 
     def observe(self) -> dict[str, Any]:
+        """A constant marker carrying the reason nothing could be read."""
         return {"_unverifiable": True, "_reason": self.reason}
 
     def verifiable(self) -> bool:
+        """Always false. The broker counts this and the eval harness publishes it."""
         return False
 
 

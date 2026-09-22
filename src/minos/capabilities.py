@@ -20,6 +20,8 @@ __all__ = ["OperationSpec", "capability_for", "known_operations", "register"]
 
 @dataclass(frozen=True, slots=True)
 class OperationSpec:
+    """One row of the registry: an operation, the capability it spends, and why."""
+
     operation: str
     capability: str
     summary: str
@@ -35,6 +37,13 @@ _REGISTRY: dict[str, OperationSpec] = {}
 
 
 def register(spec: OperationSpec) -> OperationSpec:
+    """Add an operation to the registry and return it.
+
+    Re-registering the identical spec is a no-op, so importing an adapter twice
+    is harmless. Registering a *different* spec for a name already taken raises:
+    silently rebinding an operation to a weaker capability is how a privilege
+    check gets bypassed without anyone editing a policy.
+    """
     existing = _REGISTRY.get(spec.operation)
     if existing is not None and existing != spec:
         raise ValueError(
@@ -56,6 +65,7 @@ def capability_for(operation: str) -> str | None:
 
 
 def known_operations() -> dict[str, OperationSpec]:
+    """A copy of the whole registry, for ``--help`` output and planner tool schemas."""
     return dict(_REGISTRY)
 
 

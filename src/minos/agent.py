@@ -22,6 +22,7 @@ from dataclasses import dataclass, field
 from .broker import Broker
 from .planner.base import Done, Observation, Planner, Trajectory
 from .router import NoAdapter, Router
+from .trace import Event, Observer
 from .types import ActionRequest, Outcome
 
 __all__ = ["Agent", "AgentLimits"]
@@ -41,6 +42,21 @@ class Agent:
     broker: Broker
     limits: AgentLimits = field(default_factory=AgentLimits)
 
+    observer: Observer | None = None
+    """Called as the run proceeds. See :mod:`minos.trace`.
+
+    Watching must never change the outcome, so every call is wrapped: a broken
+    observer is ignored rather than allowed to abort a task.
+    """
+
+    def _emit(self, kind: str, step: int, text: str = "", **data: object) -> None:
+        if self.observer is None:
+            return
+        try:
+            self.observer(Event(kind=kind, step=step, text=text, data=dict(data)))
+        except Exception:
+            self.observer = None  # once is a bug; twice is noise
+
     def __post_init__(self) -> None:
         # The broker has no router by design (I1), so it cannot run a declared
         # inverse on its own. The agent owns both, so this is where they meet --
@@ -58,18 +74,32 @@ class Agent:
         observations: list[Observation] = []
         denials: dict[tuple[str, str], int] = {}
 
-        for _ in range(self.limits.max_steps):
+        for index in range(self.limits.max_steps):
+            number = index + 1
             step = self.planner.next_action(goal, observations, self.broker.scopes)
+
+            # Whatever the planner said while deciding. Shown, never acted on.
+            thinking = str(getattr(self.planner, "last_thinking", "") or "")
+            if thinking:
+                self._emit("thinking", number, thinking)
 
             if isinstance(step, Done):
                 trajectory.finished = step
+                self._emit(
+                    "finish",
+                    number,
+                    step.summary,
+                    succeeded=step.succeeded,
+                )
                 return trajectory
 
             trajectory.steps.append(step)
+            self._emit("plan", number, step.operation, params=step.params, intent=step.intent)
 
             try:
                 routed = self.router.route(step)
             except NoAdapter as exc:
+                self._emit("result", number, str(exc), status="unroutable")
                 observations.append(
                     Observation(
                         request=step,
@@ -81,7 +111,31 @@ class Agent:
                 trajectory.observations = observations
                 continue
 
+            self._emit(
+                "route",
+                number,
+                f"{routed.invocation.tier} / {routed.invocation.adapter}",
+                tier=str(routed.invocation.tier),
+                adapter=routed.invocation.adapter,
+                reason=routed.invocation.tier_reason,
+                effect=str(routed.invocation.contract.effect_class),
+            )
+
             outcome = self.broker.submit(routed.invocation, routed.execute)
+            self._emit(
+                "verdict",
+                number,
+                outcome.decision.rationale,
+                verdict=outcome.decision.verdict,
+            )
+            self._emit(
+                "result",
+                number,
+                outcome.error or (outcome.observed.detail if outcome.observed else ""),
+                status=outcome.status,
+                checkpoint=outcome.checkpoint_id,
+                reversed_=(outcome.reversal.succeeded if outcome.reversal else None),
+            )
             trajectory.outcomes.append(outcome)
             observations.append(Observation.of(outcome))
             trajectory.observations = observations
@@ -94,6 +148,7 @@ class Agent:
                     ),
                     succeeded=False,
                 )
+                self._emit("finish", number, trajectory.finished.summary, succeeded=False)
                 return trajectory
 
             if outcome.status == "denied":
@@ -107,12 +162,14 @@ class Agent:
                         ),
                         succeeded=False,
                     )
+                    self._emit("finish", number, trajectory.finished.summary, succeeded=False)
                     return trajectory
 
         trajectory.finished = Done(
             summary=f"step budget exhausted after {self.limits.max_steps} steps",
             succeeded=False,
         )
+        self._emit("finish", self.limits.max_steps, trajectory.finished.summary, succeeded=False)
         return trajectory
 
 

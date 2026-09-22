@@ -64,6 +64,7 @@ def cmd_run(args: argparse.Namespace) -> int:
     from .tiers.l2_adapters import TabularAdapter
     from .tiers.l2_code import CodeAdapter
     from .tiers.l3_gui import GuiAdapter
+    from .trace import ConsolePrinter, SessionRecorder, fan_out
 
     workspace = Path(args.workspace).expanduser().resolve()
     if not workspace.is_dir():
@@ -149,7 +150,15 @@ def cmd_run(args: argparse.Namespace) -> int:
         approver=(lambda inv, dec: True) if args.yes else cli_approver,
         dry_run=args.dry_run,
     )
+    # Live trace to the terminal, and a transcript kept for afterwards. The
+    # transcript is a debugging record, deliberately separate from the audit
+    # chain -- see minos.trace.
+    recorder = SessionRecorder(state=state, goal=args.goal) if args.trace else None
+    printer = ConsolePrinter(show_thinking=not args.quiet, show_code=not args.quiet)
+    observer = fan_out(printer if not args.quiet else None, recorder)
+
     agent = Agent(
+        observer=observer,
         planner=planner,
         router=Router(
             adapters=(
@@ -197,6 +206,7 @@ def cmd_run(args: argparse.Namespace) -> int:
         )
         return 2
 
+    print()
     print("-" * 64)
     for step, outcome in zip(trajectory.steps, trajectory.outcomes, strict=False):
         mark = {"ok": "ok  ", "denied": "DENY", "dry_run": "dry "}.get(outcome.status, "FAIL")
@@ -228,6 +238,9 @@ def cmd_run(args: argparse.Namespace) -> int:
     memory.end_session("cli")
     memory.close()
     print(f"  memory: {state / 'memory.db'}")
+    if recorder is not None:
+        print(f"  trace : {recorder.path}")
+        recorder.prune(keep=20)
     if external:
         # Changes nobody asked this runtime to make. Worth saying out loud.
         print(f"  watcher: {len(external)} file change(s) seen outside this run")
@@ -272,6 +285,7 @@ def _planner(args: argparse.Namespace, operations: tuple[str, ...]):  # type: ig
             operations=operations,
             base_url=args.base_url,
             model=args.model or cfg.model,
+            context_tokens=cfg.context_tokens,
         )
     if choice != "claude":
         raise ImportError(f"unknown planner {choice!r}")
@@ -567,6 +581,17 @@ def build_parser() -> argparse.ArgumentParser:
             "let the agent use your real mouse and keyboard. It shares your "
             "desktop and takes the cursor; Ctrl+Alt+Esc aborts."
         ),
+    )
+    run.add_argument(
+        "--quiet",
+        action="store_true",
+        help="hide the live trace; print only the final summary",
+    )
+    run.add_argument(
+        "--no-trace",
+        dest="trace",
+        action="store_false",
+        help="do not write a session transcript to .minos/sessions/",
     )
     run.add_argument("--state", default=cfg.state)
     run.add_argument(

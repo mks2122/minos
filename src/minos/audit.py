@@ -28,6 +28,8 @@ GENESIS = "0" * 64
 
 @dataclass(frozen=True, slots=True)
 class ChainBreak:
+    """One point where the recomputed chain disagrees with what is on disk."""
+
     seq: int
     expected: str
     found: str
@@ -75,13 +77,20 @@ class AuditLog:
 
     @property
     def head(self) -> str:
+        """Hash of the most recent entry, or :data:`GENESIS` when the log is empty."""
         return self._head
 
     @property
     def count(self) -> int:
+        """Number of entries written so far."""
         return self._seq
 
     def append(self, record: ProvenanceRecord) -> str:
+        """Write one record and return its hash.
+
+        Flushed and fsynced before returning: a record the caller believes was
+        logged must survive the process dying immediately afterwards.
+        """
         payload = {
             "seq": record.seq,
             "ts": record.ts.isoformat(),
@@ -126,9 +135,11 @@ class AuditLog:
         return entry_hash
 
     def next_seq(self) -> int:
+        """The sequence number the next appended record should carry."""
         return self._seq + 1
 
     def entries(self) -> list[dict[str, Any]]:
+        """Every record on disk, oldest first. A missing log reads as empty."""
         if not self.path.exists():
             return []
         out: list[dict[str, Any]] = []
