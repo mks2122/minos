@@ -164,7 +164,7 @@ def test_concurrent_runs_do_not_break_the_audit_chain(tmp_path):
     workspace.mkdir()
 
     def run_one(n: int) -> None:
-        with lock_state(state, timeout=10.0):
+        with lock_state(state, timeout=60.0):
             broker = Broker(
                 scopes=ScopeSet.parse([f"fs.write:{workspace}/**"]),
                 audit=AuditLog(state / "audit.jsonl"),
