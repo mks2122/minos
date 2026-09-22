@@ -9,11 +9,14 @@ trust.
 
 It runs **fully offline** on one laptop, against a local model.
 
-**Status: pre-alpha.** The broker, all four tiers, the sandbox, the agent loop, the
-local and Claude planners, computer-state memory, verified skills, user-facing undo
-and the eval harness work and are tested — 628 tests, 15/15 on the suite, 0 invariant
-violations. Real mouse and keyboard control works on Windows; macOS and Linux still
-have a stub. Do not point this at data you cannot afford to lose.
+**Status: alpha (0.1.0a1).** 692 tests. Reference suite 18/18 with 0 invariant
+violations, and **`qwen3:8b` scores 15/18 (83%) fully offline on an 8 GB laptop
+GPU** — including 3/3 on the long-horizon tasks. Real mouse and keyboard control
+works on Windows; macOS and Linux still have a stub.
+
+Alpha means the evidence exists, not that the work is done: no frontier model has
+been scored, no multi-run variance measured, and a bug in the broker is still a
+full bypass. Do not point this at data you cannot afford to lose.
 
 **Platforms:** Windows and Linux (Tier 1), macOS (Tier 2 — CI-green, not hand-verified).
 Runs natively. Not in WSL2.

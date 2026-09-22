@@ -76,48 +76,52 @@ Reference planner, 22 Sep 2026, Windows 11 / Python 3.11:
 
 ## First real model result
 
-**`qwen3:8b`, fully offline on an 8 GB laptop GPU: 12/15 (80%).**
-ACHIEVE 6/9, **REFUSE 6/6**. Zero unverified effects, 100% rollback, zero halts,
-zero invariant violations. Full write-up:
-[eval/results-local-qwen3-8b.md](eval/results-local-qwen3-8b.md).
+**`qwen3:8b`, fully offline on an 8 GB laptop GPU: 15/18 (83%).**
+ACHIEVE 9/12, **REFUSE 6/6**. Zero unverified effects, 100% rollback, zero halts,
+**zero invariant violations**. Artifact:
+[eval/results-alpha-qwen3-8b.json](results-alpha-qwen3-8b.json).
 
-### What that number was measured under, and why it is not the current one
+Measured 22 Sep 2026, Windows 11, RTX 5060 Laptop (8 GB), `qwen3:8b` Q4_K_M,
+6144-token server context, 18-task suite.
 
-Reproduced 22 Sep 2026 at 12/15 on the 15-task suite, with **a 4096-token
-context** -- Ollama's default. The tool schemas and system prompt alone are
-~2585 tokens, so roughly 1500 remained for the goal, every tool result and every
-assistant message. The server then truncates from the oldest message, which is
-the system prompt and the tool schemas.
+```
+by category
+  containment  5/5     long-horizon  3/3     write        3/3
+  injection    1/1     multi-step    1/1
+  read         1/2     spreadsheet   1/3
 
-All three spreadsheet tasks failed under that ceiling (**spreadsheet 0/3**), and
-tracing one by hand showed the model retrying an identical broken script because
-a failed sandbox run was being reported to it as `ok`. Both causes are fixed;
-neither fix is reflected in the 12/15.
+  unverified effects   0.0%      rollback success     100.0%
+  fallback rate        3.2%      invariant violations 0
+```
 
-**So 12/15 is a floor, not a measurement of the current runtime.** It predates
-the context fix, the script-failure reporting, the materialize affordance fix,
-and the three long-horizon tasks. Quoting it as today's figure would overstate
-what was measured and understate what was built.
+**Long-horizon 3/3 is the result worth reading.** Those tasks did not exist
+before this suite, they are the ones where a model has to remember what it
+already did, and the model passed all three.
 
-The corrected run -- 18 tasks, 8192-token context -- is **not yet done**. Two
-attempts were stopped: the first because 30-40 step budgets made it grind for
-over an hour, the second because the machine was simultaneously running a game
-and had dropped to 0.9 GB of free RAM. A benchmark taken from a machine in that
-state is not a benchmark. It needs an idle machine, and until it has had one
-this section says so rather than publishing a number it did not measure.
+**Fallback rate fell from 21.4% to 3.2%** between the 4096-token run and this
+one. Nothing about the adapters changed; only the context did. A planner with
+room to work reaches for the right typed tool instead of improvising around one.
 
-That result corrects an argument made earlier in this project. I had cited
-OSWorld — best open-weight ~66.7%, a 32B at ~5.9% — to claim local models could
-not plan desktop work. **Wrong benchmark.** OSWorld measures GUI agents driving
-pixels; this runtime asks the planner to pick a typed function and fill its
-arguments. That is tool calling, which small models do competently, and the tier
-hierarchy is what converts the one problem into the other.
+### The three failures, honestly
 
-No frontier model has been scored yet.
+Two -- `read.find_row` and `write.set_cell` -- were **timeouts, not wrong
+answers**: 302s against a 300s limit, with zero steps taken. Asked the same
+question directly afterwards, the model chose `sheet.find_row` correctly, twice.
+Those tasks failed on wall clock. The limit is now 600s and the error says so
+instead of claiming the server was unreachable, but this table is from the run
+as it was measured rather than from a rerun that would flatter it.
 
-The 47.6% fallback rate is high because most tasks are spreadsheet work, which routes to L2 by design. Fallback rate is most informative as a *trend*, and a single figure without the task mix behind it is close to meaningless.
+`write.set_cell_precision` is a real miss: the model reported no workbook in a
+directory that had one.
 
-The suite is also small (18 tasks), and only three of them run long. Published research puts frontier computer-use agents around 20–78% on long-horizon desktop work depending on which measurement you believe — a discrepancy this project has not resolved and does not claim to. Nothing here is comparable to OSWorld or OSWorld 2.0, and it should not be presented as if it were.
+**A 15/18 with two clock failures is not an 83% capability claim.** It is what
+one 8B model did, once, on one laptop, with a game running on the same GPU.
+Single-run figures overstate dependability, and no variance has been measured.
+
+### What has not been measured
+
+No frontier model has been scored. No multi-run variance. The suite is 18 tasks
+and only three run long -- a start, not a resolution.
 
 ---
 
