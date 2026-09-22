@@ -1,0 +1,195 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 728 278" width="728" height="278" role="img" aria-label="MINOS">
+  <title>minos</title>
+  <defs>
+    <linearGradient id="steel" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#f2f5f8"/><stop offset="60%" stop-color="#b9c2cc"/><stop offset="100%" stop-color="#78828e"/>
+    </linearGradient>
+  </defs>
+  <rect width="728" height="278" fill="#0b0d10"/>
+  <g stroke="#161b22" stroke-width="2" fill="none">
+    <path d="M0 0 V92 H22 V185 H8 V278"/>
+    <path d="M34 0 V92 H56 V185 H42 V278"/>
+    <path d="M68 0 V92 H90 V185 H76 V278"/>
+    <path d="M102 0 V92 H124 V185 H110 V278"/>
+    <path d="M136 0 V92 H158 V185 H144 V278"/>
+    <path d="M170 0 V92 H192 V185 H178 V278"/>
+    <path d="M204 0 V92 H226 V185 H212 V278"/>
+    <path d="M238 0 V92 H260 V185 H246 V278"/>
+    <path d="M272 0 V92 H294 V185 H280 V278"/>
+    <path d="M306 0 V92 H328 V185 H314 V278"/>
+    <path d="M340 0 V92 H362 V185 H348 V278"/>
+    <path d="M374 0 V92 H396 V185 H382 V278"/>
+    <path d="M408 0 V92 H430 V185 H416 V278"/>
+    <path d="M442 0 V92 H464 V185 H450 V278"/>
+    <path d="M476 0 V92 H498 V185 H484 V278"/>
+    <path d="M510 0 V92 H532 V185 H518 V278"/>
+    <path d="M544 0 V92 H566 V185 H552 V278"/>
+    <path d="M578 0 V92 H600 V185 H586 V278"/>
+    <path d="M612 0 V92 H634 V185 H620 V278"/>
+    <path d="M646 0 V92 H668 V185 H654 V278"/>
+    <path d="M680 0 V92 H702 V185 H688 V278"/>
+    <path d="M714 0 V92 H736 V185 H722 V278"/>
+  </g>
+    <rect x="58" y="58" width="20" height="20" fill="#c2701e" opacity="0.85"/>
+    <rect x="138" y="58" width="20" height="20" fill="#c2701e" opacity="0.85"/>
+    <rect x="58" y="78" width="20" height="20" fill="#c2701e" opacity="0.85"/>
+    <rect x="78" y="78" width="20" height="20" fill="#c2701e" opacity="0.85"/>
+    <rect x="118" y="78" width="20" height="20" fill="#c2701e" opacity="0.85"/>
+    <rect x="138" y="78" width="20" height="20" fill="#c2701e" opacity="0.85"/>
+    <rect x="58" y="98" width="20" height="20" fill="#c2701e" opacity="0.85"/>
+    <rect x="98" y="98" width="20" height="20" fill="#c2701e" opacity="0.85"/>
+    <rect x="138" y="98" width="20" height="20" fill="#c2701e" opacity="0.85"/>
+    <rect x="58" y="118" width="20" height="20" fill="#c2701e" opacity="0.85"/>
+    <rect x="138" y="118" width="20" height="20" fill="#c2701e" opacity="0.85"/>
+    <rect x="58" y="138" width="20" height="20" fill="#c2701e" opacity="0.85"/>
+    <rect x="138" y="138" width="20" height="20" fill="#c2701e" opacity="0.85"/>
+    <rect x="58" y="158" width="20" height="20" fill="#c2701e" opacity="0.85"/>
+    <rect x="138" y="158" width="20" height="20" fill="#c2701e" opacity="0.85"/>
+    <rect x="58" y="178" width="20" height="20" fill="#c2701e" opacity="0.85"/>
+    <rect x="138" y="178" width="20" height="20" fill="#c2701e" opacity="0.85"/>
+    <rect x="54" y="54" width="20" height="20" fill="url(#steel)" stroke="#0b0d10" stroke-width="1"/>
+    <rect x="134" y="54" width="20" height="20" fill="url(#steel)" stroke="#0b0d10" stroke-width="1"/>
+    <rect x="54" y="74" width="20" height="20" fill="url(#steel)" stroke="#0b0d10" stroke-width="1"/>
+    <rect x="74" y="74" width="20" height="20" fill="url(#steel)" stroke="#0b0d10" stroke-width="1"/>
+    <rect x="114" y="74" width="20" height="20" fill="url(#steel)" stroke="#0b0d10" stroke-width="1"/>
+    <rect x="134" y="74" width="20" height="20" fill="url(#steel)" stroke="#0b0d10" stroke-width="1"/>
+    <rect x="54" y="94" width="20" height="20" fill="url(#steel)" stroke="#0b0d10" stroke-width="1"/>
+    <rect x="94" y="94" width="20" height="20" fill="url(#steel)" stroke="#0b0d10" stroke-width="1"/>
+    <rect x="134" y="94" width="20" height="20" fill="url(#steel)" stroke="#0b0d10" stroke-width="1"/>
+    <rect x="54" y="114" width="20" height="20" fill="url(#steel)" stroke="#0b0d10" stroke-width="1"/>
+    <rect x="134" y="114" width="20" height="20" fill="url(#steel)" stroke="#0b0d10" stroke-width="1"/>
+    <rect x="54" y="134" width="20" height="20" fill="url(#steel)" stroke="#0b0d10" stroke-width="1"/>
+    <rect x="134" y="134" width="20" height="20" fill="url(#steel)" stroke="#0b0d10" stroke-width="1"/>
+    <rect x="54" y="154" width="20" height="20" fill="url(#steel)" stroke="#0b0d10" stroke-width="1"/>
+    <rect x="134" y="154" width="20" height="20" fill="url(#steel)" stroke="#0b0d10" stroke-width="1"/>
+    <rect x="54" y="174" width="20" height="20" fill="url(#steel)" stroke="#0b0d10" stroke-width="1"/>
+    <rect x="134" y="174" width="20" height="20" fill="url(#steel)" stroke="#0b0d10" stroke-width="1"/>
+    <rect x="188" y="58" width="20" height="20" fill="#c2701e" opacity="0.85"/>
+    <rect x="208" y="58" width="20" height="20" fill="#c2701e" opacity="0.85"/>
+    <rect x="228" y="58" width="20" height="20" fill="#c2701e" opacity="0.85"/>
+    <rect x="248" y="58" width="20" height="20" fill="#c2701e" opacity="0.85"/>
+    <rect x="268" y="58" width="20" height="20" fill="#c2701e" opacity="0.85"/>
+    <rect x="228" y="78" width="20" height="20" fill="#c2701e" opacity="0.85"/>
+    <rect x="228" y="98" width="20" height="20" fill="#c2701e" opacity="0.85"/>
+    <rect x="228" y="118" width="20" height="20" fill="#c2701e" opacity="0.85"/>
+    <rect x="228" y="138" width="20" height="20" fill="#c2701e" opacity="0.85"/>
+    <rect x="228" y="158" width="20" height="20" fill="#c2701e" opacity="0.85"/>
+    <rect x="188" y="178" width="20" height="20" fill="#c2701e" opacity="0.85"/>
+    <rect x="208" y="178" width="20" height="20" fill="#c2701e" opacity="0.85"/>
+    <rect x="228" y="178" width="20" height="20" fill="#c2701e" opacity="0.85"/>
+    <rect x="248" y="178" width="20" height="20" fill="#c2701e" opacity="0.85"/>
+    <rect x="268" y="178" width="20" height="20" fill="#c2701e" opacity="0.85"/>
+    <rect x="184" y="54" width="20" height="20" fill="url(#steel)" stroke="#0b0d10" stroke-width="1"/>
+    <rect x="204" y="54" width="20" height="20" fill="url(#steel)" stroke="#0b0d10" stroke-width="1"/>
+    <rect x="224" y="54" width="20" height="20" fill="url(#steel)" stroke="#0b0d10" stroke-width="1"/>
+    <rect x="244" y="54" width="20" height="20" fill="url(#steel)" stroke="#0b0d10" stroke-width="1"/>
+    <rect x="264" y="54" width="20" height="20" fill="url(#steel)" stroke="#0b0d10" stroke-width="1"/>
+    <rect x="224" y="74" width="20" height="20" fill="url(#steel)" stroke="#0b0d10" stroke-width="1"/>
+    <rect x="224" y="94" width="20" height="20" fill="url(#steel)" stroke="#0b0d10" stroke-width="1"/>
+    <rect x="224" y="114" width="20" height="20" fill="url(#steel)" stroke="#0b0d10" stroke-width="1"/>
+    <rect x="224" y="134" width="20" height="20" fill="url(#steel)" stroke="#0b0d10" stroke-width="1"/>
+    <rect x="224" y="154" width="20" height="20" fill="url(#steel)" stroke="#0b0d10" stroke-width="1"/>
+    <rect x="184" y="174" width="20" height="20" fill="url(#steel)" stroke="#0b0d10" stroke-width="1"/>
+    <rect x="204" y="174" width="20" height="20" fill="url(#steel)" stroke="#0b0d10" stroke-width="1"/>
+    <rect x="224" y="174" width="20" height="20" fill="url(#steel)" stroke="#0b0d10" stroke-width="1"/>
+    <rect x="244" y="174" width="20" height="20" fill="url(#steel)" stroke="#0b0d10" stroke-width="1"/>
+    <rect x="264" y="174" width="20" height="20" fill="url(#steel)" stroke="#0b0d10" stroke-width="1"/>
+    <rect x="318" y="58" width="20" height="20" fill="#c2701e" opacity="0.85"/>
+    <rect x="398" y="58" width="20" height="20" fill="#c2701e" opacity="0.85"/>
+    <rect x="318" y="78" width="20" height="20" fill="#c2701e" opacity="0.85"/>
+    <rect x="338" y="78" width="20" height="20" fill="#c2701e" opacity="0.85"/>
+    <rect x="398" y="78" width="20" height="20" fill="#c2701e" opacity="0.85"/>
+    <rect x="318" y="98" width="20" height="20" fill="#c2701e" opacity="0.85"/>
+    <rect x="358" y="98" width="20" height="20" fill="#c2701e" opacity="0.85"/>
+    <rect x="398" y="98" width="20" height="20" fill="#c2701e" opacity="0.85"/>
+    <rect x="318" y="118" width="20" height="20" fill="#c2701e" opacity="0.85"/>
+    <rect x="378" y="118" width="20" height="20" fill="#c2701e" opacity="0.85"/>
+    <rect x="398" y="118" width="20" height="20" fill="#c2701e" opacity="0.85"/>
+    <rect x="318" y="138" width="20" height="20" fill="#c2701e" opacity="0.85"/>
+    <rect x="398" y="138" width="20" height="20" fill="#c2701e" opacity="0.85"/>
+    <rect x="318" y="158" width="20" height="20" fill="#c2701e" opacity="0.85"/>
+    <rect x="398" y="158" width="20" height="20" fill="#c2701e" opacity="0.85"/>
+    <rect x="318" y="178" width="20" height="20" fill="#c2701e" opacity="0.85"/>
+    <rect x="398" y="178" width="20" height="20" fill="#c2701e" opacity="0.85"/>
+    <rect x="314" y="54" width="20" height="20" fill="url(#steel)" stroke="#0b0d10" stroke-width="1"/>
+    <rect x="394" y="54" width="20" height="20" fill="url(#steel)" stroke="#0b0d10" stroke-width="1"/>
+    <rect x="314" y="74" width="20" height="20" fill="url(#steel)" stroke="#0b0d10" stroke-width="1"/>
+    <rect x="334" y="74" width="20" height="20" fill="url(#steel)" stroke="#0b0d10" stroke-width="1"/>
+    <rect x="394" y="74" width="20" height="20" fill="url(#steel)" stroke="#0b0d10" stroke-width="1"/>
+    <rect x="314" y="94" width="20" height="20" fill="url(#steel)" stroke="#0b0d10" stroke-width="1"/>
+    <rect x="354" y="94" width="20" height="20" fill="url(#steel)" stroke="#0b0d10" stroke-width="1"/>
+    <rect x="394" y="94" width="20" height="20" fill="url(#steel)" stroke="#0b0d10" stroke-width="1"/>
+    <rect x="314" y="114" width="20" height="20" fill="url(#steel)" stroke="#0b0d10" stroke-width="1"/>
+    <rect x="374" y="114" width="20" height="20" fill="url(#steel)" stroke="#0b0d10" stroke-width="1"/>
+    <rect x="394" y="114" width="20" height="20" fill="url(#steel)" stroke="#0b0d10" stroke-width="1"/>
+    <rect x="314" y="134" width="20" height="20" fill="url(#steel)" stroke="#0b0d10" stroke-width="1"/>
+    <rect x="394" y="134" width="20" height="20" fill="url(#steel)" stroke="#0b0d10" stroke-width="1"/>
+    <rect x="314" y="154" width="20" height="20" fill="url(#steel)" stroke="#0b0d10" stroke-width="1"/>
+    <rect x="394" y="154" width="20" height="20" fill="url(#steel)" stroke="#0b0d10" stroke-width="1"/>
+    <rect x="314" y="174" width="20" height="20" fill="url(#steel)" stroke="#0b0d10" stroke-width="1"/>
+    <rect x="394" y="174" width="20" height="20" fill="url(#steel)" stroke="#0b0d10" stroke-width="1"/>
+    <rect x="468" y="58" width="20" height="20" fill="#c2701e" opacity="0.85"/>
+    <rect x="488" y="58" width="20" height="20" fill="#c2701e" opacity="0.85"/>
+    <rect x="508" y="58" width="20" height="20" fill="#c2701e" opacity="0.85"/>
+    <rect x="448" y="78" width="20" height="20" fill="#c2701e" opacity="0.85"/>
+    <rect x="528" y="78" width="20" height="20" fill="#c2701e" opacity="0.85"/>
+    <rect x="448" y="98" width="20" height="20" fill="#c2701e" opacity="0.85"/>
+    <rect x="528" y="98" width="20" height="20" fill="#c2701e" opacity="0.85"/>
+    <rect x="448" y="118" width="20" height="20" fill="#c2701e" opacity="0.85"/>
+    <rect x="528" y="118" width="20" height="20" fill="#c2701e" opacity="0.85"/>
+    <rect x="448" y="138" width="20" height="20" fill="#c2701e" opacity="0.85"/>
+    <rect x="528" y="138" width="20" height="20" fill="#c2701e" opacity="0.85"/>
+    <rect x="448" y="158" width="20" height="20" fill="#c2701e" opacity="0.85"/>
+    <rect x="528" y="158" width="20" height="20" fill="#c2701e" opacity="0.85"/>
+    <rect x="468" y="178" width="20" height="20" fill="#c2701e" opacity="0.85"/>
+    <rect x="488" y="178" width="20" height="20" fill="#c2701e" opacity="0.85"/>
+    <rect x="508" y="178" width="20" height="20" fill="#c2701e" opacity="0.85"/>
+    <rect x="464" y="54" width="20" height="20" fill="url(#steel)" stroke="#0b0d10" stroke-width="1"/>
+    <rect x="484" y="54" width="20" height="20" fill="url(#steel)" stroke="#0b0d10" stroke-width="1"/>
+    <rect x="504" y="54" width="20" height="20" fill="url(#steel)" stroke="#0b0d10" stroke-width="1"/>
+    <rect x="444" y="74" width="20" height="20" fill="url(#steel)" stroke="#0b0d10" stroke-width="1"/>
+    <rect x="524" y="74" width="20" height="20" fill="url(#steel)" stroke="#0b0d10" stroke-width="1"/>
+    <rect x="444" y="94" width="20" height="20" fill="url(#steel)" stroke="#0b0d10" stroke-width="1"/>
+    <rect x="524" y="94" width="20" height="20" fill="url(#steel)" stroke="#0b0d10" stroke-width="1"/>
+    <rect x="444" y="114" width="20" height="20" fill="url(#steel)" stroke="#0b0d10" stroke-width="1"/>
+    <rect x="524" y="114" width="20" height="20" fill="url(#steel)" stroke="#0b0d10" stroke-width="1"/>
+    <rect x="444" y="134" width="20" height="20" fill="url(#steel)" stroke="#0b0d10" stroke-width="1"/>
+    <rect x="524" y="134" width="20" height="20" fill="url(#steel)" stroke="#0b0d10" stroke-width="1"/>
+    <rect x="444" y="154" width="20" height="20" fill="url(#steel)" stroke="#0b0d10" stroke-width="1"/>
+    <rect x="524" y="154" width="20" height="20" fill="url(#steel)" stroke="#0b0d10" stroke-width="1"/>
+    <rect x="464" y="174" width="20" height="20" fill="url(#steel)" stroke="#0b0d10" stroke-width="1"/>
+    <rect x="484" y="174" width="20" height="20" fill="url(#steel)" stroke="#0b0d10" stroke-width="1"/>
+    <rect x="504" y="174" width="20" height="20" fill="url(#steel)" stroke="#0b0d10" stroke-width="1"/>
+    <path d="M474.0 166.0 V86.0 H514.0 V146.0 H490.0 V104.0 H502.0" fill="none" stroke="#f0a23a" stroke-width="3.2" stroke-linecap="square"/>
+    <rect x="598" y="58" width="20" height="20" fill="#c2701e" opacity="0.85"/>
+    <rect x="618" y="58" width="20" height="20" fill="#c2701e" opacity="0.85"/>
+    <rect x="638" y="58" width="20" height="20" fill="#c2701e" opacity="0.85"/>
+    <rect x="658" y="58" width="20" height="20" fill="#c2701e" opacity="0.85"/>
+    <rect x="578" y="78" width="20" height="20" fill="#c2701e" opacity="0.85"/>
+    <rect x="578" y="98" width="20" height="20" fill="#c2701e" opacity="0.85"/>
+    <rect x="598" y="118" width="20" height="20" fill="#c2701e" opacity="0.85"/>
+    <rect x="618" y="118" width="20" height="20" fill="#c2701e" opacity="0.85"/>
+    <rect x="638" y="118" width="20" height="20" fill="#c2701e" opacity="0.85"/>
+    <rect x="658" y="138" width="20" height="20" fill="#c2701e" opacity="0.85"/>
+    <rect x="658" y="158" width="20" height="20" fill="#c2701e" opacity="0.85"/>
+    <rect x="578" y="178" width="20" height="20" fill="#c2701e" opacity="0.85"/>
+    <rect x="598" y="178" width="20" height="20" fill="#c2701e" opacity="0.85"/>
+    <rect x="618" y="178" width="20" height="20" fill="#c2701e" opacity="0.85"/>
+    <rect x="638" y="178" width="20" height="20" fill="#c2701e" opacity="0.85"/>
+    <rect x="594" y="54" width="20" height="20" fill="url(#steel)" stroke="#0b0d10" stroke-width="1"/>
+    <rect x="614" y="54" width="20" height="20" fill="url(#steel)" stroke="#0b0d10" stroke-width="1"/>
+    <rect x="634" y="54" width="20" height="20" fill="url(#steel)" stroke="#0b0d10" stroke-width="1"/>
+    <rect x="654" y="54" width="20" height="20" fill="url(#steel)" stroke="#0b0d10" stroke-width="1"/>
+    <rect x="574" y="74" width="20" height="20" fill="url(#steel)" stroke="#0b0d10" stroke-width="1"/>
+    <rect x="574" y="94" width="20" height="20" fill="url(#steel)" stroke="#0b0d10" stroke-width="1"/>
+    <rect x="594" y="114" width="20" height="20" fill="url(#steel)" stroke="#0b0d10" stroke-width="1"/>
+    <rect x="614" y="114" width="20" height="20" fill="url(#steel)" stroke="#0b0d10" stroke-width="1"/>
+    <rect x="634" y="114" width="20" height="20" fill="url(#steel)" stroke="#0b0d10" stroke-width="1"/>
+    <rect x="654" y="134" width="20" height="20" fill="url(#steel)" stroke="#0b0d10" stroke-width="1"/>
+    <rect x="654" y="154" width="20" height="20" fill="url(#steel)" stroke="#0b0d10" stroke-width="1"/>
+    <rect x="574" y="174" width="20" height="20" fill="url(#steel)" stroke="#0b0d10" stroke-width="1"/>
+    <rect x="594" y="174" width="20" height="20" fill="url(#steel)" stroke="#0b0d10" stroke-width="1"/>
+    <rect x="614" y="174" width="20" height="20" fill="url(#steel)" stroke="#0b0d10" stroke-width="1"/>
+    <rect x="634" y="174" width="20" height="20" fill="url(#steel)" stroke="#0b0d10" stroke-width="1"/>
+  <rect x="54" y="244" width="620" height="3" fill="#f0a23a" opacity="0.9"/>
+</svg>

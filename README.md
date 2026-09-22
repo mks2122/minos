@@ -1,39 +1,43 @@
-<h1 align="center">minos</h1>
+<p align="center">
+  <img src="assets/hero.svg" alt="minos" width="100%">
+</p>
 
-<p align="center"><b>A desktop agent that can't do anything you didn't allow — and can undo what it did.</b></p>
+## minos 🗝️
+
+---
 
 <p align="center">
-  <a href="#getting-started"><b>Quick start</b></a> ·
-  <a href="ARCHITECTURE.md"><b>Architecture</b></a> ·
-  <a href="EVALUATION.md"><b>Evaluation</b></a> ·
-  <a href="SECURITY.md"><b>Security</b></a> ·
-  <a href="docs/LOCAL.md"><b>Run it offline</b></a>
+  <a href="#getting-started">Quick start</a> |
+  <a href="#what-it-refuses-to-do">What it refuses</a> |
+  <a href="docs/LOCAL.md">Run it offline</a>
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/tests-692%20passing-brightgreen" alt="tests">
-  <img src="https://img.shields.io/badge/reference%20suite-18%2F18-brightgreen" alt="reference suite">
-  <img src="https://img.shields.io/badge/qwen3%3A8b-15%2F18%20(83%25)-blue" alt="local model score">
-  <img src="https://img.shields.io/badge/invariant%20violations-0-brightgreen" alt="invariant violations">
-  <img src="https://img.shields.io/badge/licence-Apache--2.0-blue" alt="licence">
+  <a href="ARCHITECTURE.md"><img src="https://img.shields.io/badge/DOCS-ARCHITECTURE-2b3440?style=flat-square&labelColor=3a4350" alt=""></a>
+  <a href="SECURITY.md"><img src="https://img.shields.io/badge/SECURITY-THREAT%20MODEL-c2701e?style=flat-square&labelColor=3a4350" alt=""></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/LICENSE-APACHE%202.0-1f6feb?style=flat-square&labelColor=3a4350" alt=""></a>
 </p>
 
 <p align="center">
-  <img src="assets/demo.svg" alt="minos converting a PDF to Word with a local 8B model, then undoing it" width="880">
+  <a href="docs/LOCAL.md"><img src="https://img.shields.io/badge/RUNS-100%25%20OFFLINE-2ea043?style=flat-square&labelColor=3a4350" alt=""></a>
+  <a href="docs/STATUS.md"><img src="https://img.shields.io/badge/STATUS-ALPHA-d29922?style=flat-square&labelColor=3a4350" alt=""></a>
+  <a href="EVALUATION.md"><img src="https://img.shields.io/badge/TESTS-692%20PASSING-2ea043?style=flat-square&labelColor=3a4350" alt=""></a>
 </p>
 
-<p align="center"><sub>Real output. <code>qwen3:8b</code> on an 8 GB laptop GPU, no network. Nobody wrote a <code>doc.convert</code> tool.</sub></p>
-
-```bash
-uv sync --all-extras && uv run python main.py
-```
+**A desktop agent that can't do anything you didn't allow — and can undo what it did.**
 
 Every action — a file write, a spreadsheet cell, a script the model wrote itself, a
 synthetic click — passes through one capability-scoped policy broker that **declares
 what will change before it happens**, verifies that it did, and puts it back when it
 didn't.
 
-Runs **fully offline on one laptop** against a local model.
+```bash
+uv sync --all-extras && uv run python main.py
+```
+
+<p align="center">
+  <img src="assets/demo.svg" alt="minos converting a PDF to Word with a local model, then undoing it" width="880">
+</p>
 
 - 🔒 **Scoped, not sandboxed.** The model gets capabilities you typed on the command
   line. It works on your real files, not a copy in a container.
@@ -44,17 +48,13 @@ Runs **fully offline on one laptop** against a local model.
 - 🧪 **Writes its own tools.** No adapter for PDF→Word? It writes a script, runs it in
   a sandbox, and the output is promoted under the same contract as any other write.
 - 🔗 **Hash-chained audit log.** Every admission decision, tamper-evident.
-- 🚫 **Refusal is measured.** 6 of 18 eval tasks are things the agent *should fail* to
-  do. An agent scoring well on capability and badly on refusal is the one you should
-  not install.
+- 🚫 **Refusal is measured.** A third of the eval suite is things the agent *should
+  fail* to do.
 - 💻 **Offline by default.** `--offline` makes it a guarantee, not a preference.
 
-### Contents
-
-[The problem](#the-problem) · [What it refuses to do](#what-it-refuses-to-do) ·
-[How it works](#how-it-works) · [Getting started](#getting-started) ·
-[Status](#status-alpha-010a1) · [Evaluation](#evaluation) ·
-[Development](#development) · [Docs](#docs) · [Prior art](#prior-art)
+> ⚠️ **Alpha. It edits your real files and can drive your real mouse.** A bug in the
+> broker is a full bypass — it is the only line of defence. Don't point it at data you
+> cannot afford to lose. [What alpha does and does not claim →](docs/STATUS.md)
 
 ---
 
