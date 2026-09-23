@@ -196,29 +196,63 @@ _SCHEMAS: dict[str, dict[str, Any]] = {
             "x": {"type": "integer", "description": "Screen x. Only without 'element'."},
             "y": {"type": "integer", "description": "Screen y. Only without 'element'."},
             "button": {"type": "string", "description": "left, right or middle. Default left."},
+            "window": {
+                "type": "string",
+                "description": (
+                    "Title of the window to act in. It is brought to the front "
+                    "first, and nothing is sent if it cannot be."
+                ),
+            },
         },
         [],
     ),
     "ui.type": _tool(
         "ui_type",
-        "Type text into the focused window.",
-        {"text": {"type": "string"}},
+        "Type text into a window, at wherever its keyboard focus is. Click the field first.",
+        {
+            "text": {"type": "string"},
+            "window": {
+                "type": "string",
+                "description": (
+                    "Title of the window to act in. It is brought to the front "
+                    "first, and nothing is sent if it cannot be."
+                ),
+            },
+        },
         ["text"],
     ),
     "ui.key": _tool(
         "ui_key",
-        "Press a key chord in the focused window, e.g. 'ctrl+s' or 'alt+f4'.",
-        {"chord": {"type": "string"}},
+        "Press a key chord in a window, e.g. 'ctrl+s' or 'alt+f4'.",
+        {
+            "chord": {"type": "string"},
+            "window": {
+                "type": "string",
+                "description": (
+                    "Title of the window to act in. It is brought to the front "
+                    "first, and nothing is sent if it cannot be."
+                ),
+            },
+        },
         ["chord"],
     ),
     "ui.screenshot": _tool(
         "ui_screenshot",
         (
-            "Observe the focused window: its title and size. This is the weakest "
-            "evidence the runtime has -- it says something rendered, not that "
-            "anything is true. Never treat it as confirmation that a task worked."
+            "List a window's title and the names of its visible controls -- call "
+            "this before clicking, to learn what the controls are called. This is "
+            "the weakest evidence the runtime has: it says something rendered, "
+            "not that anything is true. Never treat it as confirmation."
         ),
-        {},
+        {
+            "window": {
+                "type": "string",
+                "description": (
+                    "Title of the window to act in. It is brought to the front "
+                    "first, and nothing is sent if it cannot be."
+                ),
+            },
+        },
         [],
     ),
     "memory.recall": _tool(

@@ -15,10 +15,19 @@ from minos.config import DEFAULTS, Settings, load_dotenv, settings
 
 @pytest.fixture(autouse=True)
 def clean_env(monkeypatch):
-    """No MINOS_* leaking in from the developer's own shell."""
+    """No MINOS_* leaking in from the developer's own shell, or out to later tests.
+
+    Loading a .env writes into os.environ, which monkeypatch does not undo for
+    variables it never touched -- so a test's MINOS_OFFLINE=1 used to survive
+    into whichever test ran next.
+    """
     for name in list(os.environ):
         if name.startswith("MINOS_"):
             monkeypatch.delenv(name, raising=False)
+    yield
+    for name in list(os.environ):
+        if name.startswith("MINOS_"):
+            del os.environ[name]
 
 
 # -- defaults are local ----------------------------------------------------

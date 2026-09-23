@@ -91,11 +91,16 @@ class GuiAdapter:
         if op == "ui.screenshot":
 
             def observe(_: Invocation) -> dict[str, Any]:
+                if window not in ("", "*"):
+                    self._aim(window)
                 state = self.driver.observe()
+                # The controls are what make clicking by name possible; without
+                # them the planner is guessing what the buttons are called.
+                controls = getattr(self.driver, "controls", None)
                 return {
                     "digest": state.digest,
                     "focused_window": state.focused_window,
-                    "elements": list(state.elements),
+                    "elements": list(controls() if controls else state.elements),
                 }
 
             return Preparation(
@@ -180,6 +185,11 @@ class GuiAdapter:
             except ElementNotFound:
                 raise
 
+            if not self._still_aimed():
+                raise OperationUnsupported(
+                    f"the window changed while looking for {element!r}; nothing was clicked"
+                )
+
             if button == "left" and tree.invoke(found):
                 # Invoked through the accessibility layer: the physical cursor
                 # never moved, so the user can keep working.
@@ -198,6 +208,17 @@ class GuiAdapter:
         )
 
     # -- helper ------------------------------------------------------------
+
+    def _aim(self, window: str) -> None:
+        focus = getattr(self.driver, "focus", None)
+        if focus is None:
+            raise OperationUnsupported(f"{self.driver.name} cannot target a window")
+        focus(window)
+
+    def _still_aimed(self) -> bool:
+        target = getattr(self.driver, "_target", 0)
+        user32 = getattr(self.driver, "_user32", None)
+        return not target or user32 is None or user32.GetForegroundWindow() == target
 
     def _acting(
         self,
@@ -224,6 +245,17 @@ class GuiAdapter:
         declared = request.params.get("targets")
         targets = tuple(Path(str(t)) for t in declared) if declared else ()
 
+        def aimed(invocation: Invocation) -> Any:
+            # Aim first, at execute time: the window named in the grant is the
+            # one that receives the input, or nothing does.
+            if window not in ("", "*"):
+                self._aim(window)
+            else:
+                release = getattr(self.driver, "release", None)
+                if release:
+                    release()
+            return execute(invocation)
+
         grants: list[Grant] = [Grant("ui.input", window)]
         grants.extend(Grant("fs.write", str(target)) for target in targets)
 
@@ -236,7 +268,7 @@ class GuiAdapter:
                 oracle=FileHashOracle(targets) if targets else oracle,
                 expect=expect + ("" if targets else "; effects unknown to this runtime"),
             ),
-            execute=execute,
+            execute=aimed,
             grants=tuple(grants),
         )
 
