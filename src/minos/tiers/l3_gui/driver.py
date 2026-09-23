@@ -79,6 +79,14 @@ class StubDriver:
     def key(self, chord: str) -> None:
         self._events.append(f"key:{chord}")
 
+    def focus(self, window: str) -> str:
+        self.focused_window = window
+        self._events.append(f"focus:{window}")
+        return window
+
+    def release(self) -> None:
+        pass
+
     # -- test helpers ------------------------------------------------------
 
     @property

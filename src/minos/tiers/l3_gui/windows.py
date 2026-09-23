@@ -16,10 +16,11 @@ deliberately does **not** abort: focus changes constantly during legitimate
 automation, and a driver that gave up whenever a tooltip stole focus would be
 useless.
 
-*Window-targeted input is not implemented here yet.* Driving a control through
-the accessibility layer, without moving the physical cursor, is the next
-milestone; today every click is a real cursor move. Said plainly because the
-difference is what determines whether someone can keep working while this runs.
+*Input goes only to the window it was granted for.* An action that names a
+window brings it to the front first, and every event checks it is still there;
+if something else took focus, nothing is sent. Clicks on controls found by name
+go through the accessibility layer where the control allows it, so the cursor
+does not move. Typing and coordinate clicks are real input, and do.
 
 This module uses ``ctypes`` against ``user32`` rather than taking a dependency.
 Synthetic input is four API calls; the packages that wrap it bring far more
@@ -45,7 +46,14 @@ from typing import Any
 
 from .driver import ScreenState
 
-__all__ = ["PanicAbort", "WindowsDriver", "panic_watcher"]
+__all__ = [
+    "FocusLost",
+    "PanicAbort",
+    "WindowNotFound",
+    "WindowsDriver",
+    "find_window",
+    "panic_watcher",
+]
 
 # Plain ctypes aliases rather than ctypes.wintypes: importing wintypes raises on
 # Linux and macOS, and CI typechecks and imports this module on all three. The
@@ -58,6 +66,19 @@ _ULONG_PTR = ctypes.POINTER(ctypes.c_ulong)
 
 class PanicAbort(Exception):
     """The panic key was pressed. Stop, release input, do not retry."""
+
+
+class WindowNotFound(LookupError):
+    """No top-level window matches the title the action was granted for."""
+
+
+class FocusLost(OSError):
+    """The window the input was meant for is no longer in front.
+
+    Raised instead of sending: keystrokes meant for one window and delivered to
+    whatever took focus -- a notification, a password prompt, the user's own
+    editor -- are exactly the input the grant did not cover.
+    """
 
 
 # -- win32 plumbing --------------------------------------------------------
@@ -144,6 +165,47 @@ def _user32() -> Any:
     return ctypes.WinDLL("user32", use_last_error=True)
 
 
+def _title(user32: Any, handle: int) -> str:
+    length = user32.GetWindowTextLengthW(handle)
+    buffer = ctypes.create_unicode_buffer(length + 1)
+    user32.GetWindowTextW(handle, buffer, length + 1)
+    return buffer.value
+
+
+def find_window(title: str) -> tuple[int, str]:
+    """The one visible top-level window called ``title``.
+
+    Exact (case-insensitive) matches win; a substring match is accepted only
+    when it is the only one. Two windows both containing "Notepad" is the same
+    question as two buttons named "Save", and gets the same answer.
+    """
+    user32 = _user32()
+    windows: list[tuple[int, str]] = []
+
+    def collect(handle: int, _: Any) -> bool:
+        if user32.IsWindowVisible(handle):
+            name = _title(user32, handle)
+            if name:
+                windows.append((handle, name))
+        return True
+
+    # getattr: WINFUNCTYPE exists only on Windows, and CI typechecks all three.
+    functype = getattr(ctypes, "WINFUNCTYPE")  # noqa: B009
+    callback = functype(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)
+    user32.EnumWindows(callback(collect), 0)
+    wanted = title.strip().casefold()
+    exact = [w for w in windows if w[1].casefold() == wanted]
+    if len(exact) == 1:
+        return exact[0]
+    loose = exact or [w for w in windows if wanted and wanted in w[1].casefold()]
+    if not loose:
+        raise WindowNotFound(f"no open window is called {title!r}")
+    if len(loose) > 1:
+        names = ", ".join(repr(name) for _, name in loose[:5])
+        raise WindowNotFound(f"{len(loose)} windows match {title!r}: {names}. Give the full title.")
+    return loose[0]
+
+
 # -- the panic key ---------------------------------------------------------
 
 
@@ -219,6 +281,7 @@ class WindowsDriver:
 
     panic: panic_watcher | None = None
     _user32: Any = field(default=None, init=False, repr=False)
+    _target: int = field(default=0, init=False, repr=False)
 
     def __post_init__(self) -> None:
         if sys.platform != "win32":
@@ -259,12 +322,71 @@ class WindowsDriver:
 
     def _foreground_title(self) -> str:
         handle = self._user32.GetForegroundWindow()
-        if not handle:
-            return ""
-        length = self._user32.GetWindowTextLengthW(handle)
-        buffer = ctypes.create_unicode_buffer(length + 1)
-        self._user32.GetWindowTextW(handle, buffer, length + 1)
-        return buffer.value
+        return _title(self._user32, handle) if handle else ""
+
+    def controls(self, limit: int = 60) -> tuple[str, ...]:
+        """The named, visible controls of the foreground window.
+
+        This is what lets a model click by name: without it the planner has to
+        guess what the buttons are called. Empty when UI Automation is missing.
+        """
+        from .uia import UiaTree, available
+
+        if not available():
+            return ()
+        seen: list[str] = []
+        for element in UiaTree().elements():
+            if element.name and element.visible:
+                label = f"{element.control_type} {element.name!r}"
+                if label not in seen:
+                    seen.append(label)
+            if len(seen) >= limit:
+                break
+        return tuple(seen)
+
+    # -- focus -------------------------------------------------------------
+
+    def focus(self, window: str) -> str:
+        """Bring the named window to the front, and hold input to it.
+
+        Windows refuses ``SetForegroundWindow`` from a process that is not
+        already in front, so attach to the foreground thread's input queue for
+        the call. If it still does not come forward, raise: typing into
+        whatever happens to be in front instead is the failure this exists to
+        prevent. Every later event checks the window is still in front.
+        """
+        self._target = 0
+        self._guard()
+        handle, title = find_window(window)
+        user32 = self._user32
+        if user32.GetForegroundWindow() != handle:
+            if user32.IsIconic(handle):
+                user32.ShowWindow(handle, 9)  # SW_RESTORE
+            ours = ctypes.WinDLL("kernel32").GetCurrentThreadId()
+            theirs = user32.GetWindowThreadProcessId(user32.GetForegroundWindow(), None)
+            attached = bool(
+                theirs and theirs != ours and user32.AttachThreadInput(ours, theirs, True)
+            )
+            try:
+                user32.BringWindowToTop(handle)
+                user32.SetForegroundWindow(handle)
+            finally:
+                if attached:
+                    user32.AttachThreadInput(ours, theirs, False)
+            deadline = time.monotonic() + 2.0
+            while user32.GetForegroundWindow() != handle and time.monotonic() < deadline:
+                time.sleep(0.05)
+            if user32.GetForegroundWindow() != handle:
+                raise FocusLost(
+                    f"could not bring {title!r} to the front "
+                    f"({self._foreground_title()!r} is); nothing was sent"
+                )
+        self._target = handle
+        return title
+
+    def release(self) -> None:
+        """Stop holding input to a window. The next action may go anywhere."""
+        self._target = 0
 
     # -- input -------------------------------------------------------------
 
@@ -324,9 +446,20 @@ class WindowsDriver:
     # -- internals ---------------------------------------------------------
 
     def _guard(self) -> None:
-        """Checked before every event, so abort lands within one action."""
+        """Checked before every event, so abort lands within one action.
+
+        Also refuses to send when a window was focused and something else has
+        since come to the front. That is not the panic key's job -- focus moves
+        for innocent reasons -- but input meant for one window must never land
+        in another, so the action fails and the planner can focus again.
+        """
         if self.panic is not None:
             self.panic.check()
+        if self._target and self._user32.GetForegroundWindow() != self._target:
+            raise FocusLost(
+                f"the target window is no longer in front ({self._foreground_title()!r} "
+                "is); nothing was sent"
+            )
 
     def _mouse(self, flags: int, x: int = 0, y: int = 0) -> _INPUT:
         return _INPUT(

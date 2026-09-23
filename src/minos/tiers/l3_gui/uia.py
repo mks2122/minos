@@ -75,7 +75,13 @@ class Element:
     height: int = 0
     enabled: bool = True
     invokable: bool = False
+    offscreen: bool = False
     _native: Any = None
+
+    @property
+    def visible(self) -> bool:
+        """On screen with a real size. A scrolled-away tab reports (0, 0)."""
+        return not self.offscreen and self.width > 0 and self.height > 0
 
     @property
     def centre(self) -> tuple[int, int]:
@@ -145,12 +151,17 @@ class UiaTree:
 
         Matching is case-insensitive and ignores the ``&`` accelerator markers
         Windows puts in labels, because a task says "Save" and the control is
-        called "&Save".
+        called "&Save". Controls that are scrolled away or have no size are not
+        candidates: their reported centre is (0, 0), and clicking it hits the
+        corner of the screen.
         """
         wanted = _normalise(name)
+        # One walk: the tree is the expensive part, and two walks can disagree
+        # if the application redraws in between.
+        present = [element for element in self.elements() if element.visible]
         matches = [
             element
-            for element in self.elements()
+            for element in present
             if _normalise(element.name) == wanted
             and (control_type is None or element.control_type == control_type)
         ]
@@ -160,8 +171,10 @@ class UiaTree:
             # vague match beat an exact one.
             matches = [
                 element
-                for element in self.elements()
-                if wanted and wanted in _normalise(element.name)
+                for element in present
+                if wanted
+                and wanted in _normalise(element.name)
+                and (control_type is None or element.control_type == control_type)
             ]
 
         usable = [element for element in matches if element.enabled]
@@ -180,11 +193,12 @@ class UiaTree:
         an ordinary fact about a control, and the caller's answer is to click
         its centre instead.
         """
-        if not element.invokable or element._native is None:
+        if not element.invokable or not element._native:
             return False
         try:
             pattern = element._native.GetCurrentPattern(_INVOKE_PATTERN_ID)
-            if pattern is None:
+            # A NULL pattern pointer is falsy, not None -- see _root.
+            if not pattern:
                 return False
             import comtypes.client
 
@@ -193,7 +207,9 @@ class UiaTree:
             )
             invoker.Invoke()
             return True
-        except (OSError, AttributeError, ValueError):
+        except Exception:
+            # Invoke failing is recoverable by clicking, so it must not escape
+            # as a crash; the caller clicks the centre instead.
             return False
 
     # -- internals ---------------------------------------------------------
@@ -214,10 +230,14 @@ class UiaTree:
                 # does not exist; CI runs mypy on all three platforms.
                 user32 = getattr(ctypes, "windll").user32  # noqa: B009
                 handle = user32.GetForegroundWindow()
-                root = self._automation.ElementFromHandle(handle) if handle else None
             else:
-                root = self._automation.GetRootElement()
-        except (OSError, AttributeError):  # pragma: no cover - COM teardown
+                from .windows import find_window
+
+                handle, _ = find_window(window)
+            root = self._automation.ElementFromHandle(handle) if handle else None
+        except LookupError:
+            raise
+        except Exception:
             return None
         # A COM call returns a NULL *pointer object*, never None, so `is None`
         # is always False and the next attribute access dereferences null.
@@ -239,7 +259,7 @@ class UiaTree:
         try:
             children = self._automation.ControlViewWalker
             child = children.GetFirstChildElement(node)
-        except (OSError, AttributeError):  # pragma: no cover
+        except Exception:
             return []
 
         count = 0
@@ -253,7 +273,7 @@ class UiaTree:
             found.extend(self._walk(child, depth + 1))
             try:
                 child = children.GetNextSiblingElement(child)
-            except (OSError, AttributeError):  # pragma: no cover
+            except Exception:
                 break
             count += 1
         return found
@@ -262,6 +282,8 @@ class UiaTree:
 _MAX_DEPTH = 12
 _MAX_SIBLINGS = 200
 _INVOKE_PATTERN_ID = 10000
+_IS_INVOKE_AVAILABLE = 30031
+_IS_OFFSCREEN = 30022
 
 
 def _to_element(native: Any) -> Element | None:
@@ -277,10 +299,14 @@ def _to_element(native: Any) -> Element | None:
             width=int(rect.right - rect.left),
             height=int(rect.bottom - rect.top),
             enabled=bool(native.CurrentIsEnabled),
-            invokable=bool(native.CurrentIsKeyboardFocusable),
+            # Whether the control supports Invoke, not whether it takes focus:
+            # a text box takes focus and cannot be invoked, a toolbar button
+            # often the reverse.
+            invokable=bool(native.GetCurrentPropertyValue(_IS_INVOKE_AVAILABLE)),
+            offscreen=bool(native.GetCurrentPropertyValue(_IS_OFFSCREEN)),
             _native=native,
         )
-    except (OSError, AttributeError, ValueError, TypeError):  # stale or NULL node
+    except Exception:
         return None
 
 

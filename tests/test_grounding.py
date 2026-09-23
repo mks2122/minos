@@ -315,3 +315,91 @@ def test_the_focused_window_is_the_window_not_the_focused_control():
     source = inspect.getsource(UiaTree._root)
     assert "GetForegroundWindow" in source
     assert "ElementFromHandle" in source
+
+
+# -- found live, on a real desktop -----------------------------------------
+
+
+def test_scrolled_away_controls_are_not_candidates(fake_uia):
+    """Notepad's off-screen tabs report a (0, 0) centre. Clicking one hits the
+    corner of the screen, so they must not match at all."""
+    from minos.tiers.l3_gui.uia import UiaTree
+
+    fake_uia["elements"] = (
+        Element(name="Readme.txt", control_type="tabitem"),  # no size
+        element("Readme.txt", control_type="tabitem", offscreen=True),
+        element("Readme.txt", control_type="tabitem"),
+    )
+    found = UiaTree().find("Readme.txt")
+    assert found.visible and found.centre != (0, 0)
+
+
+def test_a_control_with_no_invoke_pattern_is_clicked_not_crashed():
+    """A NULL COM pointer is falsy but not None, and COMError is not an
+    OSError. Both used to escape invoke() as a crash."""
+    from minos.tiers.l3_gui.uia import UiaTree
+
+    class NullPattern:
+        def GetCurrentPattern(self, _):
+            return 0  # falsy, like a NULL pointer object
+
+    class Exploding:
+        def GetCurrentPattern(self, _):
+            raise Exception("COMError: -2147467259")
+
+    tree = UiaTree.__new__(UiaTree)
+    for native in (NullPattern(), Exploding()):
+        target = element("Status", invokable=True, _native=native)
+        assert tree.invoke(target) is False
+
+
+def test_an_action_naming_a_window_focuses_it_first():
+    driver = StubDriver()
+    adapter = GuiAdapter(driver)
+    prep = adapter.prepare(
+        ActionRequest(
+            goal_id="g",
+            intent="type",
+            operation="ui.type",
+            params={"text": "hi", "window": "Report.docx - Word"},
+        )
+    )
+    prep.execute(None)
+    assert driver.events[:2] == ["focus:Report.docx - Word", "type:2"]
+
+
+def test_a_focus_failure_sends_nothing():
+    class Refuses(StubDriver):
+        def focus(self, window):
+            raise OSError("could not bring it to the front")
+
+    driver = Refuses()
+    prep = GuiAdapter(driver).prepare(
+        ActionRequest(
+            goal_id="g",
+            intent="type",
+            operation="ui.type",
+            params={"text": "secret", "window": "Somewhere"},
+        )
+    )
+    with pytest.raises(OSError):
+        prep.execute(None)
+    assert driver.typed == ""
+
+
+def test_screenshot_reports_the_controls_the_model_can_name():
+    class WithControls(StubDriver):
+        def controls(self):
+            return ("button 'Save as copy'", "edit 'Body'")
+
+    prep = GuiAdapter(WithControls()).prepare(
+        ActionRequest(goal_id="g", intent="look", operation="ui.screenshot", params={})
+    )
+    assert prep.execute(None)["elements"] == ["button 'Save as copy'", "edit 'Body'"]
+
+
+def test_every_gui_tool_lets_the_model_name_its_window():
+    from minos.planner.schemas import _SCHEMAS as TOOLS
+
+    for op in ("ui.click", "ui.type", "ui.key", "ui.screenshot"):
+        assert "window" in TOOLS[op]["input_schema"]["properties"], op

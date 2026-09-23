@@ -85,7 +85,12 @@ def cmd_run(args: argparse.Namespace) -> int:
         scopes.append(f"fs.delete:{workspace}/**")
     if args.allow_open:
         scopes.append(f"app.open:{workspace}/**")
-    if args.allow_gui:
+    if args.gui_window:
+        # Input only for the named windows. An action that names no window, or
+        # another one, is outside the grant and is refused before it is sent.
+        args.allow_gui = True
+        scopes.extend(f"ui.input:{title}" for title in args.gui_window)
+    elif args.allow_gui:
         # The virtual device drives the real desktop. Never implicit.
         scopes.append("ui.input:*")
 
@@ -604,6 +609,16 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             "let the agent use your real mouse and keyboard. It shares your "
             "desktop and takes the cursor; Ctrl+Alt+Esc aborts."
+        ),
+    )
+    run.add_argument(
+        "--gui-window",
+        action="append",
+        metavar="TITLE",
+        help=(
+            "like --allow-gui, but input may only go to the window with this "
+            "title. Repeat for more than one. Safer: nothing can be typed into "
+            "whatever else happens to be in front."
         ),
     )
     run.add_argument(
