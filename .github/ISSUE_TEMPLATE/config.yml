@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/mks2122/minos/security/advisories/new
+    about: Privately. Please do not open a public issue for these.
+  - name: Local model setup (Ollama, context size, VRAM)
+    url: https://github.com/mks2122/minos/blob/main/docs/LOCAL.md
+    about: Most "the model is slow or bad" problems are answered here.

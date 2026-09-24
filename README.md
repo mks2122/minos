@@ -328,7 +328,11 @@ fail is a comment.
 
 If you are adding a capability, the shape is: effect contract → oracle that reads the
 system of record → checkpoint or declared inverse → an eval task that proves it.
-[ARCHITECTURE.md](ARCHITECTURE.md) walks through the life of an action.
+[ARCHITECTURE.md](ARCHITECTURE.md) walks through the life of an action, and
+[CONTRIBUTING.md](CONTRIBUTING.md) has the checks a pull request needs to pass.
+Everyone taking part follows the [code of conduct](CODE_OF_CONDUCT.md). Found a
+vulnerability? Report it privately, as described in
+[SECURITY.md](SECURITY.md#reporting-a-vulnerability), not in a public issue.
 
 ---
 
@@ -341,6 +345,7 @@ system of record → checkpoint or declared inverse → an eval task that proves
 | [EVALUATION.md](EVALUATION.md) | Method, metrics, current numbers, what is not measured |
 | [docs/LOCAL.md](docs/LOCAL.md) | Running fully offline: models, context sizing, measured VRAM |
 | [docs/STATUS.md](docs/STATUS.md) | What is built, what is stubbed, what is missing |
+| [CHANGELOG.md](CHANGELOG.md) | What changed in each release |
 | [docs/PLAN.md](docs/PLAN.md) | The original milestones, build-vs-borrow, metrics |
 | [docs/PLAN-GENERALITY.md](docs/PLAN-GENERALITY.md) | Why capability stopped costing one adapter each |
 | [docs/REVIEW.md](docs/REVIEW.md) | An audit of the checkpoint journal, and the bugs it found |
