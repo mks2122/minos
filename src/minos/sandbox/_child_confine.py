@@ -91,6 +91,11 @@ _FS_IOCTL_DEV = 1 << 15  # ABI 5
 _FS_EXECUTE = 1 << 0
 _FS_READ_FILE = 1 << 2
 _FS_READ_DIR = 1 << 3
+_FS_WRITE_FILE = 1 << 1
+_FS_FILE_ONLY = _FS_EXECUTE | _FS_WRITE_FILE | _FS_READ_FILE | _FS_TRUNCATE | _FS_IOCTL_DEV
+"""The rights that apply to a file rather than a directory. A rule on a single
+file that also names a directory right is refused with EINVAL, and one refused
+rule used to cost the whole ruleset."""
 
 _NET_BIND_TCP = 1 << 0  # ABI 4
 _NET_CONNECT_TCP = 1 << 1
@@ -178,7 +183,8 @@ def _landlock(read_write: list[str], read_only: list[str], report: Applied) -> N
                     # a directory that does not exist is not a thing anyway.
                     continue
                 try:
-                    rule = PathBeneathAttr(access, fd)
+                    granted = access if os.path.isdir(path) else access & _FS_FILE_ONLY
+                    rule = PathBeneathAttr(granted, fd)
                     if (
                         libc.syscall(
                             ctypes.c_long(_LANDLOCK_ADD_RULE),
@@ -631,8 +637,42 @@ def read_roots(workspace_root: str) -> list[str]:
     """
     roots = {sys.prefix, sys.base_prefix, sys.exec_prefix, sys.base_exec_prefix}
     roots.update(p for p in sys.path if p)
+    roots.update(p for p in _system_read_roots() if os.path.exists(p))
     roots.discard("")
     return sorted(os.path.abspath(p) for p in roots if p)
+
+
+def _system_read_roots() -> list[str]:
+    """Read-only system paths that ordinary libraries need, found by CI.
+
+    Without the shared-library directories the dynamic loader cannot open
+    libm or libgfortran when numpy imports its C core, and without the mime
+    tables ``mimetypes.MimeTypes()`` -- which openpyxl calls at import -- fails.
+    Everything here is system data, identical on every machine of the same OS;
+    nothing under the user's home is on it.
+    """
+    if sys.platform == "win32":
+        return []
+    import mimetypes
+
+    roots = [
+        "/lib",
+        "/lib32",
+        "/lib64",
+        "/usr/lib",
+        "/usr/lib32",
+        "/usr/lib64",
+        "/usr/local/lib",
+        "/usr/share/zoneinfo",
+        "/etc/ld.so.cache",
+        "/etc/ld.so.conf",
+        "/etc/ld.so.conf.d",
+        "/etc/localtime",
+    ]
+    if sys.platform == "darwin":
+        roots += ["/System/Library", "/private/var/db/timezone"]
+    roots += [os.fspath(path) for path in mimetypes.knownfiles]
+    return roots
 
 
 def apply(

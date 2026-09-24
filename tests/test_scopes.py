@@ -136,3 +136,46 @@ def test_non_path_capability_matching():
     scopes = ScopeSet.parse(["net.http:api.example.com:443"])
     assert scopes.check("net.http", "api.example.com:443")[0]
     assert not scopes.check("net.http", "evil.example.com:443")[0]
+
+
+def _link(link, target) -> None:
+    """A directory symlink, or a junction on Windows where symlinks need rights."""
+    if os.name == "nt":
+        import _winapi
+
+        _winapi.CreateJunction(str(target), str(link))
+    else:
+        os.symlink(target, link, target_is_directory=True)
+
+
+def test_a_grant_through_a_symlinked_directory_still_matches(tmp_path):
+    """Found by CI. On macOS the temp directory is /var/..., really
+    /private/var/...; targets were resolved and patterns were not, so a grant
+    for the workspace matched nothing in it. Ubuntu's /bin -> /usr/bin did the
+    same to proc.spawn."""
+    real = tmp_path / "real"
+    (real / "ws").mkdir(parents=True)
+    alias = tmp_path / "alias"
+    _link(alias, real)
+
+    grant = ScopeSet.parse([f"fs.write:{alias / 'ws'}/**"])
+
+    assert grant.check("fs.write", alias / "ws" / "a.txt")[0]
+    assert grant.check("fs.write", real / "ws" / "a.txt")[0]
+    assert not grant.check("fs.write", real / "elsewhere.txt")[0]
+
+
+def test_the_grant_is_fixed_when_it_is_made(tmp_path):
+    """Re-pointing a symlink afterwards must not move what the grant covers."""
+    first, second = tmp_path / "first", tmp_path / "second"
+    first.mkdir()
+    second.mkdir()
+    alias = tmp_path / "alias"
+    _link(alias, first)
+    grant = ScopeSet.parse([f"fs.write:{alias}/**"])
+
+    alias.unlink() if os.name != "nt" else os.rmdir(alias)
+    _link(alias, second)
+
+    assert grant.check("fs.write", first / "a.txt")[0]
+    assert not grant.check("fs.write", second / "a.txt")[0]

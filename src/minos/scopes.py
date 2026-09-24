@@ -28,7 +28,7 @@ from __future__ import annotations
 
 import fnmatch
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path, PurePath
 
 __all__ = ["Scope", "ScopeSet", "ScopeViolation"]
@@ -64,6 +64,15 @@ class Scope:
     capability: str
     pattern: str
     deny: bool = False
+    anchored: str = field(default="", compare=False, repr=False)
+    """The pattern with its literal prefix resolved, fixed when the grant is made.
+
+    Targets are compared by their resolved real path, so the pattern has to be
+    too: on macOS ``/var`` is ``/private/var``, on Ubuntu ``/bin`` is
+    ``/usr/bin``, and a Windows runner's temp directory is an 8.3 short name.
+    Unresolved, a grant for ``/var/folders/x/ws/**`` never matched a file in it.
+    Resolved once here rather than at every match, so that a symlink changed
+    after the grant cannot move what the grant covers."""
 
     @classmethod
     def parse(cls, raw: str) -> Scope:
@@ -84,7 +93,8 @@ class Scope:
             )
         if not pattern:
             raise ValueError(f"scope needs a pattern: {raw!r}")
-        return cls(capability=capability, pattern=pattern, deny=deny)
+        anchored = _anchor(pattern) if capability in _PATH_CAPABILITIES else ""
+        return cls(capability=capability, pattern=pattern, deny=deny, anchored=anchored)
 
     @property
     def is_path_scope(self) -> bool:
@@ -93,6 +103,8 @@ class Scope:
     def _normalised_pattern(self) -> str:
         if not self.is_path_scope:
             return self.pattern
+        if self.anchored:
+            return self.anchored
         expanded = os.path.expanduser(self.pattern)
         # Normalise separators so a Windows-authored scope matches a POSIX path
         # pattern and vice versa. We do not resolve() the pattern: it may contain
@@ -141,6 +153,29 @@ def sys_platform_is_darwin() -> bool:
     import sys
 
     return sys.platform == "darwin"
+
+
+def _anchor(pattern: str) -> str:
+    """Resolve the part of a path pattern before its first wildcard.
+
+    ``/var/x/ws/**`` becomes ``/private/var/x/ws/**`` on macOS. The glob part is
+    kept as written; a relative pattern is left alone, since it has no fixed
+    location to resolve against.
+    """
+    expanded = PurePath(os.path.expanduser(pattern))
+    literal: list[str] = []
+    for part in expanded.parts:
+        if any(c in part for c in "*?["):
+            break
+        literal.append(part)
+    if not literal or not PurePath(*literal).is_absolute():
+        return expanded.as_posix()
+    rest = expanded.parts[len(literal) :]
+    try:
+        base = Path(*literal).resolve()
+    except (OSError, RuntimeError):
+        return expanded.as_posix()
+    return PurePath(base, *rest).as_posix()
 
 
 def resolve(p: str | Path) -> Path:

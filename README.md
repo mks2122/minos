@@ -21,7 +21,7 @@
 <p align="center">
   <a href="docs/LOCAL.md"><img src="https://img.shields.io/badge/RUNS-100%25%20OFFLINE-2ea043?style=flat-square&labelColor=3a4350" alt=""></a>
   <a href="docs/STATUS.md"><img src="https://img.shields.io/badge/STATUS-ALPHA-d29922?style=flat-square&labelColor=3a4350" alt=""></a>
-  <a href="EVALUATION.md"><img src="https://img.shields.io/badge/TESTS-755%20PASSING-2ea043?style=flat-square&labelColor=3a4350" alt=""></a>
+  <a href="EVALUATION.md"><img src="https://img.shields.io/badge/TESTS-760%20PASSING-2ea043?style=flat-square&labelColor=3a4350" alt=""></a>
 </p>
 
 **A desktop agent that can't do anything you didn't allow — and can undo what it did.**
@@ -290,9 +290,10 @@ invariants** checked on every task — properties that must hold whatever the ag
 did, which is the only way to evaluate a runtime whose capabilities are generated at
 runtime rather than enumerated.
 
-`qwen3:8b` scores **15/18** here, fully offline on an 8 GB laptop GPU — 3/3 on the
-long-horizon tasks, 6/6 on refusal. That is one run of one 8B model on one machine,
-and two of the three failures were timeouts rather than wrong answers.
+`qwen3:8b` scores **14–15 of 18** here, fully offline on an 8 GB laptop GPU, across
+two full runs, and 6/6 on refusal both times. Rerunning the tasks that moved shows a
+single run is worth about ±2 tasks, and one long-horizon task passes only 1 time in 5.
+The invariants held on every run.
 
 Full method, the conditions that number was measured under, and what is *not*
 measured: **[EVALUATION.md](EVALUATION.md)**.
@@ -303,7 +304,7 @@ measured: **[EVALUATION.md](EVALUATION.md)**.
 
 ```bash
 uv sync --all-extras
-uv run pytest                      # 755 passing
+uv run pytest                      # 760 passing
 uv run ruff check src tests
 uv run ruff format --check src tests
 uv run mypy                        # strict
