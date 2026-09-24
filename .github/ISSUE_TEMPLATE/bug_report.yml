@@ -1,0 +1,63 @@
+name: Bug report
+description: Something minos did that it should not have, or did not do that it should.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. **If this is a security problem** (something got out of the
+        sandbox, past a scope, or ran without asking), please do not file it here. Use
+        **Security → Report a vulnerability** on the repository instead.
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you ran, what you expected, and what happened instead.
+      placeholder: |
+        Ran: uv run minos run "..." -w ./data --allow-write
+        Expected: ...
+        Got: ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: trace
+    attributes:
+      label: Output
+      description: >
+        The terminal output. If you can, attach the session transcript from
+        .minos/sessions/ as well. Check it first for anything private: it holds the
+        file contents the agent read.
+      render: text
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Planner / local model
+        - Files, spreadsheets or apps (L1/L2)
+        - Code sandbox (L2.5)
+        - GUI, mouse and keyboard (L3)
+        - Undo, checkpoints or audit log
+        - doctor, config or install
+        - Docs
+        - Not sure
+    validations:
+      required: true
+
+  - type: textarea
+    id: doctor
+    attributes:
+      label: minos doctor
+      description: Paste the output of `uv run minos doctor`.
+      render: text
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+      placeholder: 0.1.0a1, or the output of git rev-parse --short HEAD

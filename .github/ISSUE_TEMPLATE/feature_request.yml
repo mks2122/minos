@@ -1,0 +1,35 @@
+name: Feature request
+description: A task minos cannot do yet, or does worse than it should.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: task
+    attributes:
+      label: The task
+      description: >
+        What you want to get done, in the words you would give the agent. A real
+        example beats a general one.
+      placeholder: "Turn every PDF in ./invoices into a row in invoices.xlsx"
+    validations:
+      required: true
+
+  - type: textarea
+    id: today
+    attributes:
+      label: What happens today
+      description: Does it refuse, fail, fall back to the GUI, or need too many steps?
+
+  - type: textarea
+    id: undo
+    attributes:
+      label: What should be undoable
+      description: >
+        minos treats undo as part of the feature. What would this change on your
+        computer, and could it be put back? If it could not be, say so; it will ask
+        before doing it.
+
+  - type: textarea
+    id: else
+    attributes:
+      label: Anything else
+      description: Apps involved, file types, links to similar tools.

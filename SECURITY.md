@@ -245,4 +245,18 @@ Anyone who can read that directory can read every file the agent has touched.
 
 ## Reporting a vulnerability
 
-Pre-alpha, single maintainer, no users to protect yet. Open a GitHub issue. If that changes, this section will.
+**Please do not open a public issue for a vulnerability.** Report it privately through
+GitHub: on the repository, go to **Security → Report a vulnerability**. That opens a
+private advisory only the maintainer can see.
+
+Include what you ran, what you expected to be contained, and what got out. A script
+that demonstrates the escape is the most useful report there is. It is also exactly
+how this document's list of what does *not* hold was written.
+
+This is alpha software with a single maintainer, so there is no bug bounty and no
+guaranteed response time. Expect an acknowledgement within a week. A confirmed issue
+gets a fix, a note in [CHANGELOG.md](CHANGELOG.md), and credit if you want it.
+
+Things already listed above as not contained (for example, reads through `ctypes` on
+Windows) are known limits rather than vulnerabilities. A way past one of the
+boundaries this document says *does* hold is exactly what should be reported.
