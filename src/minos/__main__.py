@@ -138,12 +138,22 @@ def cmd_run(args: argparse.Namespace) -> int:
 
     gui_adapters: tuple[Adapter, ...] = ()
     panic: Any = None
+    ghost: Any = None
     if args.allow_gui:
         from .tiers.l3_gui import PanicAbort, WindowsDriver, panic_watcher  # noqa: F401
 
         try:
             panic = panic_watcher()
-            gui_adapters = (GuiAdapter(driver=WindowsDriver(panic=panic)),)
+            if args.ghost:
+                from .tiers.l3_gui.ghost import GhostCursor
+
+                # Its own pointer, so the person can see where it is about to
+                # act. Losing it is not worth failing the run over.
+                try:
+                    ghost = GhostCursor()
+                except RuntimeError as exc:
+                    print(f"  (no ghost cursor: {exc})", file=sys.stderr)
+            gui_adapters = (GuiAdapter(driver=WindowsDriver(panic=panic, ghost=ghost)),)
         except RuntimeError as exc:
             print(f"error: {exc}", file=sys.stderr)
             return 2
@@ -202,9 +212,15 @@ def cmd_run(args: argparse.Namespace) -> int:
         if panic is not None:
             print("  !! the agent will use your real mouse and keyboard.")
             print("     press Ctrl+Alt+Esc to abort and release input.")
+            if ghost is not None:
+                print("     the orange pointer shows where it will act, before it does.")
             print()
-            with panic:
-                trajectory = agent.run(args.goal, goal_id="cli")
+            try:
+                with panic:
+                    trajectory = agent.run(args.goal, goal_id="cli")
+            finally:
+                if ghost is not None:
+                    ghost.close()
         else:
             trajectory = agent.run(args.goal, goal_id="cli")
     except Exception as exc:
@@ -609,6 +625,15 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             "let the agent use your real mouse and keyboard. It shares your "
             "desktop and takes the cursor; Ctrl+Alt+Esc aborts."
+        ),
+    )
+    run.add_argument(
+        "--no-ghost",
+        dest="ghost",
+        action="store_false",
+        help=(
+            "do not draw the agent's own orange pointer, which shows where it "
+            "is about to click or type before it does"
         ),
     )
     run.add_argument(

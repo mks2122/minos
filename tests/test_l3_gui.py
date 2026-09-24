@@ -235,3 +235,20 @@ def test_bad_click_params_decline_to_the_router(rig):
                 goal_id="t", intent="click", operation="ui.click", params={"x": "left-ish"}
             )
         )
+
+
+def test_a_click_that_changes_nothing_visible_is_not_a_halt(rig):
+    """Most clicks leave the title and size alone. Treating that as "the effect
+    did not happen" halted real tasks with reconciliation_required."""
+    _, _, _, run = rig
+    out = run("ui.click", x=5, y=5)
+    assert out.status == "ok"
+    assert not out.observed.verifiable
+
+
+def test_a_screenshot_that_focuses_a_window_is_not_a_halt(rig):
+    """Focusing changes the title, which a PURE contract used to read as an
+    unexpected change."""
+    _, _, _, run = rig
+    out = run("ui.screenshot", window="Some Other Window")
+    assert out.status == "ok"

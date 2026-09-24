@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import sys
 import threading
+from typing import ClassVar
 
 import pytest
 
@@ -62,6 +63,17 @@ class FakeUser32:
 
     def GetAsyncKeyState(self, vk):
         return 0
+
+    cursor = (7, 9)
+    moved_to: ClassVar[list[tuple[int, int]]] = []
+
+    def GetCursorPos(self, point):
+        point._obj.x, point._obj.y = self.cursor
+        return True
+
+    def SetCursorPos(self, x, y):
+        self.moved_to.append((x, y))
+        return True
 
 
 @pytest.fixture
@@ -346,3 +358,37 @@ def test_threading_event_is_shareable_across_the_run():
     """One watcher, many actions: the flag is the shared thing, not the driver."""
     watcher = panic_watcher()
     assert isinstance(watcher.triggered, threading.Event)
+
+
+def test_the_persons_cursor_is_put_back_after_a_click(driver):
+    """The agent borrows the one system cursor for a click; it gives it back."""
+    device, fake = driver
+    fake.moved_to = []
+    device.click(100, 200)
+    assert fake.moved_to == [fake.cursor]
+
+
+def test_the_ghost_points_before_the_adapter_acts(driver):
+    from minos.tiers.l3_gui import GuiAdapter
+    from minos.types import ActionRequest
+
+    device, _fake = driver
+    order: list[str] = []
+
+    class Ghost:
+        def point(self, x, y, label):
+            order.append(f"ghost {x},{y} {label}")
+
+    device.ghost = Ghost()
+    real_send = device._send
+
+    def send(*events):
+        order.append("input")
+        return real_send(*events)
+
+    device._send = send
+    prep = GuiAdapter(device).prepare(
+        ActionRequest(goal_id="g", intent="c", operation="ui.click", params={"x": 10, "y": 20})
+    )
+    prep.execute(None)
+    assert order == ["ghost 10,20 click (10, 20)", "input"]

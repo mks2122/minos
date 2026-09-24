@@ -186,6 +186,13 @@ class UiaTree:
             raise AmbiguousElement(name, tuple(usable))
         return usable[0]
 
+    def focused(self) -> Element | None:
+        """The control with keyboard focus: where typed text will land."""
+        try:
+            return _to_element(self._automation.GetFocusedElement())
+        except Exception:  # COMError; nothing focused
+            return None
+
     def invoke(self, element: Element) -> bool:
         """Activate a control without moving the cursor. False if not possible.
 
