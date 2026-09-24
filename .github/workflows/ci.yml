@@ -32,7 +32,13 @@ jobs:
         run: uv sync --all-extras --python ${{ matrix.python }}
 
       - name: Test
-        run: uv run --python ${{ matrix.python }} pytest -q
+        run: uv run --python ${{ matrix.python }} pytest -q --junitxml=junit.xml
+
+      # Logs need a signed-in account to read; annotations do not. Name the
+      # failing tests where anyone can see them.
+      - name: Report failing tests
+        if: failure()
+        run: uv run --python ${{ matrix.python }} python .github/scripts/report_failures.py junit.xml
 
       # The reference solutions must keep passing, or the suite has stopped
       # measuring anything. Also checks per-task regressions, not just the rate.
@@ -54,5 +60,12 @@ jobs:
         run: uv run ruff check src tests
       - name: Ruff (format)
         run: uv run ruff format --check src tests
-      - name: Mypy (strict)
-        run: uv run mypy
+      # Once per platform. This job runs on Linux, and a Windows-only ctypes call
+      # typechecks on Windows and fails here -- or the reverse -- so checking only
+      # the host platform let 22 errors through unnoticed.
+      - name: Mypy (strict, linux)
+        run: uv run mypy --platform linux
+      - name: Mypy (strict, darwin)
+        run: uv run mypy --platform darwin
+      - name: Mypy (strict, win32)
+        run: uv run mypy --platform win32

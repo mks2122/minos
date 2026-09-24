@@ -25,7 +25,8 @@ All of these must pass. CI runs them on Linux, macOS and Windows, on Python 3.11
 uv run pytest                        # unit and integration tests
 uv run ruff check src tests
 uv run ruff format --check src tests
-uv run mypy                          # strict
+uv run mypy --platform linux         # strict; CI checks linux, darwin and win32,
+uv run mypy --platform win32         # because platform-only code passes on its own OS
 uv run minos eval                    # must stay 18/18 with 0 invariant violations
 ```
 

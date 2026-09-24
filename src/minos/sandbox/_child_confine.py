@@ -172,7 +172,7 @@ def _landlock(read_write: list[str], read_only: list[str], report: Applied) -> N
         for paths, access in ((read_write, handled_fs), (read_only, readable)):
             for path in paths:
                 try:
-                    fd = os.open(path, os.O_PATH | os.O_CLOEXEC)  # type: ignore[attr-defined]
+                    fd = os.open(path, os.O_PATH | os.O_CLOEXEC)  # type: ignore[attr-defined,unused-ignore]
                 except OSError:
                     # A path that is not there needs no rule. Granting access to
                     # a directory that does not exist is not a thing anyway.
@@ -341,8 +341,8 @@ def _limit_resources(max_memory_bytes: int, report: Applied) -> None:
     done = []
     if max_memory_bytes > 0:
         try:
-            resource.setrlimit(  # type: ignore[attr-defined]
-                resource.RLIMIT_AS,  # type: ignore[attr-defined]
+            resource.setrlimit(  # type: ignore[attr-defined,unused-ignore]
+                resource.RLIMIT_AS,  # type: ignore[attr-defined,unused-ignore]
                 (max_memory_bytes, max_memory_bytes),
             )
             done.append("RLIMIT_AS")
@@ -353,7 +353,7 @@ def _limit_resources(max_memory_bytes: int, report: Applied) -> None:
         if which is None:
             continue
         try:
-            resource.setrlimit(which, (limit, limit))  # type: ignore[attr-defined]
+            resource.setrlimit(which, (limit, limit))  # type: ignore[attr-defined,unused-ignore]
             done.append(name)
         except (ValueError, OSError):
             pass

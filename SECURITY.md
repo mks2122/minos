@@ -1,6 +1,6 @@
 # Security Model
 
-**Status: pre-alpha. Do not point this at data you cannot afford to lose.**
+**Status: alpha (0.1.0a1). Do not point this at data you cannot afford to lose.**
 
 ---
 
@@ -44,7 +44,7 @@ broker's own mediation is the enforcement.**
 
 That is defensible only because of invariant I1 — the planner has no filesystem handle, no subprocess API, no network client and no input device, so the broker is not a side-channel check but the *only path* to I/O. It is a chokepoint, not an advisory.
 
-But the consequence is real and stated here rather than discovered later. Kernel confinement is planned as per-platform defence-in-depth (Landlock first, as the cheapest real win). It is **not** the foundation.
+But the consequence is real and stated here rather than discovered later. The kernel confinement described below is defence-in-depth for the code tier only. It is **not** the foundation, and it does not stand behind the broker for anything else.
 
 ---
 
@@ -171,7 +171,7 @@ On every platform, regardless of the kernel:
 - **A library handle already open is still a handle.** The audit hook stops a script
   obtaining a *new* pointer into libc; it does not reach one an imported package is
   holding.
-- **On Windows and macOS-without-seatbelt, reads are not confined by the kernel.**
+- **On Windows, reads are not confined by the kernel.**
   The mandatory integrity policy is no-write-up, not no-read-up. The read and listing
   hooks stop ordinary Python, but a script that reaches `ReadFile` through `ctypes`
   can read any file your account can, including `~/.gitconfig` and anything else in
@@ -211,17 +211,34 @@ anything leaves the sandbox.
 `--allow-gui` grants `ui.input` and hands the agent your actual mouse and
 keyboard. There is no virtual display and no VM: that is a deliberate design
 decision (see `docs/PLAN-GENERALITY.md`), and its consequence is that the agent
-shares your session and takes the cursor while it works.
+shares your session.
 
-- `Ctrl+Alt+Esc` aborts and releases input, checked before every synthesised
+- **Grant a window, not the desktop.** `--allow-gui` grants `ui.input:*`: input
+  may go to any window. `--gui-window TITLE` grants only the windows named, and an
+  action naming no window, or another one, is refused before anything is sent.
+  Prefer it.
+- **Input goes only to the window it was meant for.** An action that names a
+  window brings it to the front first, and every synthesised event checks it is
+  still in front. If a notification, a password prompt or your own editor has
+  taken focus, nothing is sent and the action fails.
+- **Every GUI action is irreversible and asks first**, unless it declares the files
+  it will change, in which case they are checkpointed.
+- **Ambiguity is refused.** Two controls with the same name, or two windows
+  matching the same title, raise with the candidates listed. Nothing is picked.
+- **`Ctrl+Alt+Esc` aborts** and releases input, checked before every synthesised
   event so it lands within one action.
-- Focus loss deliberately does **not** abort — focus changes constantly during
-  legitimate automation.
+- **You can see where it will act.** The ghost cursor, an orange pointer drawn by
+  the agent, moves to each target and pauses before the input is sent.
 - Synthetic input cannot reach a window running at higher integrity than the
   runtime. That is Windows UIPI, and the driver raises rather than silently
   doing nothing.
-- L3 remains the weakest tier. Its oracle is a window title and a size, which is
-  evidence that something rendered, not that anything is true.
+- **What this does not protect against:** anything you type or click yourself
+  while it works goes to the same window, and a model that picks the wrong control
+  by name, in the right window, is not stopped by any of the above. Approval is the
+  control for that, which is why it is never skipped for the GUI unless you pass
+  `--yes`.
+- L3 remains the weakest tier. Its only observation is a window title and a size.
+  That is recorded, and never used to decide that an action worked.
 
 ## The checkpoint store holds plaintext copies
 
@@ -230,16 +247,16 @@ Every checkpoint is an unencrypted copy of the file it protects, kept in
 default). It is `chmod 0700` on POSIX and inherits directory ACLs on Windows.
 Anyone who can read that directory can read every file the agent has touched.
 
-## Known limitations in the current pre-alpha
+## Known limitations in the current alpha
 
 - Kernel confinement covers `code.run` only; the broker's other operations have none
 - Windows confines sandbox *writes* but not *reads*; an AppContainer would close that
+- The GUI tier is Windows only; macOS and Linux have no driver yet
 - The container backend is not exercised by CI, which has no engine available
 - No network capability enforcement — `net.http` scopes parse and match, but nothing consumes them yet
 - No process sandboxing for `proc.spawn`
 - `NullOracle` means some effects are recorded as unverified; the rate is published rather than hidden
 - Audit log is not anchored externally
-- `COMPENSABLE` compensations are declared but not yet executed on failure
 
 ---
 

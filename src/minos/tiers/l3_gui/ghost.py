@@ -27,7 +27,13 @@ import ctypes
 import sys
 import threading
 import time
+from collections.abc import Callable
 from typing import Any
+
+# getattr, not attribute access: these exist only on Windows, and CI
+# typechecks every platform. The code that calls them runs only on Windows.
+_WinDLL: Any = getattr(ctypes, "WinDLL", None)
+_last_error: Callable[[], int] = getattr(ctypes, "get_last_error", lambda: 0)
 
 __all__ = ["GhostCursor"]
 
@@ -169,9 +175,9 @@ class GhostCursor:
     def _create(self) -> None:
         from ctypes import wintypes
 
-        user32 = ctypes.WinDLL("user32", use_last_error=True)
-        gdi32 = ctypes.WinDLL("gdi32", use_last_error=True)
-        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        user32 = _WinDLL("user32", use_last_error=True)
+        gdi32 = _WinDLL("gdi32", use_last_error=True)
+        kernel32 = _WinDLL("kernel32", use_last_error=True)
         self._user32 = user32
         self._gdi32 = gdi32
 
@@ -290,7 +296,7 @@ class GhostCursor:
         wc.hInstance = instance
         wc.lpszClassName = name
         if not user32.RegisterClassExW(ctypes.byref(wc)):
-            raise OSError(ctypes.get_last_error(), "RegisterClassExW failed")
+            raise OSError(_last_error(), "RegisterClassExW failed")
 
         hwnd = user32.CreateWindowExW(
             _WS_EX_LAYERED | _WS_EX_TRANSPARENT | _WS_EX_TOPMOST
@@ -298,7 +304,7 @@ class GhostCursor:
             name, "", _WS_POPUP, 0, 0, _WIDTH, _HEIGHT, None, None, instance, None,
         )  # fmt: skip
         if not hwnd:
-            raise OSError(ctypes.get_last_error(), "CreateWindowExW failed")
+            raise OSError(_last_error(), "CreateWindowExW failed")
         user32.SetLayeredWindowAttributes(hwnd, _KEY, 0, _LWA_COLORKEY)
         self._hwnd = hwnd
 
