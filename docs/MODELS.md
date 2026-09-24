@@ -191,4 +191,4 @@ Keep a WSL2 instance around **only** as a convenient Linux CI target for local d
 
 ## Related
 
-[PLAN.md](PLAN.md) · [ARCHITECTURE.md](ARCHITECTURE.md) · [RESEARCH-local-inference.md](RESEARCH-local-inference.md)
+[PLAN.md](PLAN.md) · [ARCHITECTURE.md](../ARCHITECTURE.md) · [LOCAL.md](LOCAL.md)

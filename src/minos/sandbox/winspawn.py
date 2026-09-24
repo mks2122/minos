@@ -29,12 +29,20 @@ project exists to avoid.
 from __future__ import annotations
 
 import contextlib
+import ctypes
 import os
 import subprocess
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from .confine import ConfinementNotApplied
+
+# getattr, not attribute access: these exist only on Windows, and CI
+# typechecks every platform. The code that calls them runs only on Windows.
+_WinDLL: Any = getattr(ctypes, "WinDLL", None)
+_last_error: Callable[[], int] = getattr(ctypes, "get_last_error", lambda: 0)
 
 __all__ = ["SpawnOutcome", "label_low_integrity", "spawn_confined", "supported"]
 
@@ -135,8 +143,8 @@ def spawn_confined(
     import ctypes
     from ctypes import wintypes
 
-    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
-    advapi32 = ctypes.WinDLL("advapi32", use_last_error=True)
+    kernel32 = _WinDLL("kernel32", use_last_error=True)
+    advapi32 = _WinDLL("advapi32", use_last_error=True)
 
     class STARTUPINFOW(ctypes.Structure):
         _fields_ = [
@@ -285,7 +293,7 @@ def spawn_confined(
             None,
         )
         if handle == wintypes.HANDLE(-1).value:
-            raise OSError(ctypes.get_last_error(), f"cannot create {path}")
+            raise OSError(_last_error(), f"cannot create {path}")
         return int(handle)
 
     stdout_handle = stderr_handle = stdin_handle = 0
@@ -331,7 +339,7 @@ def spawn_confined(
                 )
             )
             if not job_applied:
-                notes.append(f"job limits refused (error {ctypes.get_last_error()})")
+                notes.append(f"job limits refused (error {_last_error()})")
         else:
             notes.append("job object could not be created")
 
@@ -375,16 +383,14 @@ def spawn_confined(
                         ):
                             integrity_lowered = True
                         else:
-                            notes.append(
-                                f"integrity label refused (error {ctypes.get_last_error()})"
-                            )
+                            notes.append(f"integrity label refused (error {_last_error()})")
                         kernel32.LocalFree(sid)
                     else:
                         notes.append("low integrity SID could not be built")
                 else:
-                    notes.append(f"token duplication failed (error {ctypes.get_last_error()})")
+                    notes.append(f"token duplication failed (error {_last_error()})")
             else:
-                notes.append(f"process token not available (error {ctypes.get_last_error()})")
+                notes.append(f"process token not available (error {_last_error()})")
 
         # -- the process -----------------------------------------------------
         startup = STARTUPINFOW()
@@ -418,7 +424,7 @@ def spawn_confined(
                 )
             )
             if not created:
-                error = ctypes.get_last_error()
+                error = _last_error()
                 integrity_lowered = False
                 notes.append(
                     "low integrity spawn refused"
@@ -444,7 +450,7 @@ def spawn_confined(
                 )
             )
         if not created:
-            raise OSError(ctypes.get_last_error(), f"cannot start {argv[0]}")
+            raise OSError(_last_error(), f"cannot start {argv[0]}")
 
         process, thread = info.hProcess, info.hThread
 
@@ -454,7 +460,7 @@ def spawn_confined(
             wintypes.HANDLE(job), wintypes.HANDLE(process)
         ):
             job_applied = False
-            notes.append(f"job assignment refused (error {ctypes.get_last_error()})")
+            notes.append(f"job assignment refused (error {_last_error()})")
 
         if require and not (integrity_lowered and job_applied):
             # Still suspended: not one instruction of the script has run. A run

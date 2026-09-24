@@ -131,7 +131,7 @@ def _linux() -> Confinement:
     if arch:
         parts.append(f"seccomp-bpf refuses the socket syscalls on {arch}")
     else:
-        parts.append(f"no seccomp syscall table for {os.uname().machine}")  # type: ignore[attr-defined]
+        parts.append(f"no seccomp syscall table for {os.uname().machine}")  # type: ignore[attr-defined,unused-ignore]
     return LinuxConfinement(
         name="landlock+seccomp" if (abi and arch) else ("landlock" if abi else "seccomp"),
         kernel_enforced=bool(abi or arch),

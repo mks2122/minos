@@ -104,7 +104,10 @@ class CodeAdapter:
         """One line for ``doctor``, the trace, and anyone asking what ran where."""
         backend = self.sandbox
         described = getattr(backend, "describe", None)
-        return f"{self.origin.value} -> " + (described() if described else backend.name)
+        # This line is part of the contract, so it lands in the hash-chained
+        # audit log. A downgrade has to be legible there, not only in the trace.
+        prefix = "DOWNGRADED: " if self._choice is not None and self._choice.downgraded else ""
+        return prefix + f"{self.origin.value} -> " + (described() if described else backend.name)
 
     manifest = CapabilityManifest(
         adapter="l2.code",

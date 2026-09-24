@@ -41,10 +41,16 @@ import hashlib
 import sys
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
 from .driver import ScreenState
+
+# getattr, not attribute access: these exist only on Windows, and CI
+# typechecks every platform. The code that calls them runs only on Windows.
+_WinDLL: Any = getattr(ctypes, "WinDLL", None)
+_last_error: Callable[[], int] = getattr(ctypes, "get_last_error", lambda: 0)
 
 __all__ = [
     "FocusLost",
@@ -170,7 +176,7 @@ class _RECT(ctypes.Structure):
 def _user32() -> Any:
     if sys.platform != "win32":  # pragma: no cover - guarded by the caller
         raise RuntimeError("WindowsDriver requires Windows")
-    return ctypes.WinDLL("user32", use_last_error=True)
+    return _WinDLL("user32", use_last_error=True)
 
 
 def _title(user32: Any, handle: int) -> str:
@@ -376,7 +382,7 @@ class WindowsDriver:
         if user32.GetForegroundWindow() != handle:
             if user32.IsIconic(handle):
                 user32.ShowWindow(handle, 9)  # SW_RESTORE
-            ours = ctypes.WinDLL("kernel32").GetCurrentThreadId()
+            ours = _WinDLL("kernel32").GetCurrentThreadId()
             theirs = user32.GetWindowThreadProcessId(user32.GetForegroundWindow(), None)
             attached = bool(
                 theirs and theirs != ours and user32.AttachThreadInput(ours, theirs, True)
@@ -533,7 +539,7 @@ class WindowsDriver:
             # this process. Saying so beats "the click did nothing".
             raise OSError(
                 f"SendInput delivered {sent}/{len(events)} events "
-                f"(error {ctypes.get_last_error()}). The focused window may be "
+                f"(error {_last_error()}). The focused window may be "
                 "elevated, which blocks synthetic input from a normal process."
             )
         if self.settle:

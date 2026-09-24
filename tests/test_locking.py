@@ -98,7 +98,12 @@ def test_a_live_holder_is_never_reclaimed(tmp_path):
 
 
 def test_a_corrupt_lock_file_is_aged_out_not_trusted(tmp_path):
-    (tmp_path / ".lock").write_text("{ this is not json")
+    lock = tmp_path / ".lock"
+    lock.write_text("{ this is not json")
+    # Aged: a *fresh* unreadable file is usually a live process mid-write, and
+    # must not be reclaimed (see the race test below).
+    long_ago = lock.stat().st_mtime - 120
+    os.utime(lock, (long_ago, long_ago))
 
     with lock_state(tmp_path):
         pass
@@ -178,10 +183,49 @@ def test_concurrent_runs_do_not_break_the_audit_chain(tmp_path):
 
     import threading
 
-    threads = [threading.Thread(target=run_one, args=(i,)) for i in range(6)]
+    errors: list[BaseException] = []
+
+    def guarded(n: int) -> None:
+        # A thread that raises does not fail a test on its own; it only warns.
+        # A run that timed out waiting for the lock used to pass unnoticed.
+        try:
+            run_one(n)
+        except BaseException as exc:
+            errors.append(exc)
+
+    threads = [threading.Thread(target=guarded, args=(i,)) for i in range(6)]
     for thread in threads:
         thread.start()
     for thread in threads:
         thread.join()
 
+    assert errors == []
     assert AuditLog(state / "audit.jsonl").verify() == []
+    assert len(AuditLog(state / "audit.jsonl").entries()) == 6
+
+
+def test_a_lock_file_still_being_written_is_not_reclaimed(tmp_path):
+    """Found by CI: between O_EXCL creating the file and the pid landing in it,
+    a second process read an empty file, called its owner dead and infinitely
+    old, deleted it, and took the lock too. Two writers broke the audit chain."""
+    lock = tmp_path / ".minos" / ".lock"
+    lock.parent.mkdir()
+    lock.write_text("")  # created, pid not written yet
+
+    with pytest.raises(LockBusy):
+        lock_state(tmp_path / ".minos").acquire()
+    assert lock.exists()
+
+
+def test_an_empty_lock_file_left_by_a_crash_is_reclaimed_eventually(tmp_path):
+    lock = tmp_path / ".minos" / ".lock"
+    lock.parent.mkdir()
+    lock.write_text("")
+    long_ago = lock.stat().st_mtime - 120
+    os.utime(lock, (long_ago, long_ago))
+
+    held = lock_state(tmp_path / ".minos").acquire()
+    try:
+        assert json.loads(lock.read_text())["pid"] == os.getpid()
+    finally:
+        held.release()

@@ -35,6 +35,11 @@ __all__ = ["LockBusy", "StateLock", "lock_state"]
 _STALE_AFTER = 4 * 3600
 """Seconds. A lock older than this whose owner is gone is reclaimed."""
 
+_UNREADABLE_GRACE = 30.0
+"""Seconds an empty or unreadable lock file is left alone. Writing the pid takes
+microseconds, so a file still empty after this was left by a process that died
+between the two steps."""
+
 
 class LockBusy(Exception):
     """Another process holds the lock.
@@ -121,9 +126,20 @@ class StateLock:
         # Only remove a lock we still own. If ours was reclaimed as stale and
         # another process took it, deleting it would hand the directory to a
         # third one while the second is mid-write.
-        if self._read_holder().get("pid") == os.getpid():
-            with contextlib.suppress(OSError):
-                self.path.unlink()
+        #
+        # Retried, because on Windows a file cannot be deleted while anyone has
+        # it open, and a waiter reading the holder at that instant is routine.
+        # One failed unlink used to leave the lock behind, owned by a live pid,
+        # so every other run waited out its whole timeout.
+        for _ in range(100):
+            try:
+                if self._read_holder(strict=True).get("pid") == os.getpid():
+                    self.path.unlink()
+                break
+            except FileNotFoundError:
+                break
+            except OSError:
+                time.sleep(0.01)
         self._held = False
 
     def __enter__(self) -> StateLock:
@@ -156,10 +172,16 @@ class StateLock:
         finally:
             os.close(fd)
 
-    def _read_holder(self) -> dict[str, object]:
+    def _read_holder(self, *, strict: bool = False) -> dict[str, object]:
+        """Who holds the lock. ``strict`` lets a transient read error through,
+        so the caller can retry rather than mistake it for "nobody"."""
         try:
             data = json.loads(self.path.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
+        except OSError:
+            if strict:
+                raise
+            return {}
+        except ValueError:
             return {}
         return data if isinstance(data, dict) else {}
 
@@ -173,9 +195,19 @@ class StateLock:
         """
         raw_pid = holder.get("pid")
         if not isinstance(raw_pid, int):
-            # An unreadable or truncated lock file, most likely a process killed
-            # between create and write. Age it out rather than trusting it.
-            raw_pid = -1
+            # Empty or unreadable. Usually that is not a dead process at all: it
+            # is a live one between creating the file and writing its pid into
+            # it. Treating that as infinitely old handed the lock to a second
+            # writer and broke the audit chain, so the file's own age decides.
+            try:
+                written = self.path.stat().st_mtime
+            except OSError:
+                return False  # gone already; the next create attempt will tell
+            if time.time() - written < _UNREADABLE_GRACE:
+                return False
+            with contextlib.suppress(OSError):
+                self.path.unlink()
+            return True
 
         if _process_alive(raw_pid):
             return False

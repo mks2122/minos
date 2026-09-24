@@ -590,3 +590,16 @@ def test_a_required_boundary_that_cannot_be_applied_means_the_script_never_runs(
             require=True,
         )
     assert not marker.exists()
+
+
+def test_a_downgrade_is_written_into_the_audit_record(tmp_path):
+    """SECURITY.md promises this. The contract's expect text is hash-chained into
+    the audit log, so that is where DOWNGRADED has to appear."""
+    from minos.tiers.l2_code import CodeAdapter
+    from minos.types import ActionRequest
+
+    adapter = CodeAdapter(state=tmp_path, origin=CodeOrigin.DOWNLOADED, prefer="subprocess")
+    prep = adapter.prepare(
+        ActionRequest(goal_id="g", intent="run", operation="code.run", params={"code": "print(1)"})
+    )
+    assert "DOWNGRADED" in prep.contract.expect
