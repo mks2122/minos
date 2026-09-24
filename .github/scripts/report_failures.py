@@ -21,10 +21,14 @@ def main(path: str) -> int:
     for case in root.iter("testcase"):
         for problem in (*case.findall("failure"), *case.findall("error")):
             failed += 1
-            name = f"{case.get('classname', '')}::{case.get('name', '')}"
+            # No "::" in the title: GitHub ends the title at the first one.
+            name = f"{case.get('classname', '')} > {case.get('name', '')}"
             detail = (problem.get("message") or problem.text or "").strip()
             # One line per annotation; GitHub keeps the first ~4 KB.
-            detail = " | ".join(line for line in detail.splitlines() if line.strip())[:1500]
+            detail = " | ".join(line for line in detail.splitlines() if line.strip())
+            if len(detail) > 3000:
+                # The start says which assertion; the end says which exception.
+                detail = detail[:800] + " | ... | " + detail[-2000:]
             path_hint = case.get("file") or case.get("classname", "").replace(".", "/") + ".py"
             print(f"::error file={path_hint},title={name}::{detail or 'failed'}")
     print(f"{failed} failing test(s) reported")

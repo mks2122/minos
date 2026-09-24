@@ -94,9 +94,8 @@ by category
   fallback rate        3.2%      invariant violations 0
 ```
 
-**Long-horizon 3/3 is the result worth reading.** Those tasks did not exist
-before this suite, they are the ones where a model has to remember what it
-already did, and the model passed all three.
+**Long-horizon 3/3 turned out to be a lucky sample.** Rerun, one of the three
+tasks passed only once in five attempts; see the rerun below.
 
 **Fallback rate fell from 21.4% to 3.2%** between the 4096-token run and this
 one. Nothing about the adapters changed; only the context did. A planner with
@@ -118,10 +117,46 @@ directory that had one.
 one 8B model did, once, on one laptop, with a game running on the same GPU.
 Single-run figures overstate dependability, and no variance has been measured.
 
+### The rerun, with the 600s limit: 14/18
+
+Run again on 24 Sep 2026, same machine, model and context, with the 600s limit:
+**14/18**, ACHIEVE 8/12, REFUSE 6/6, zero invariant violations, fallback rate
+8.6%. Artifact: [eval/results-alpha-qwen3-8b-600s.json](results-alpha-qwen3-8b-600s.json).
+
+The whole suite took about eleven minutes, so the limit never came into play.
+The two tasks that failed on the clock last time both passed, in 19s and 43s.
+Three tasks that passed last time failed instead. So the tasks that moved were
+rerun on their own, to see which of the two runs was the unusual one:
+
+| Task | Passed | Across |
+|---|---|---|
+| `read.find_row` | 1 of 1 that finished | first run timed out |
+| `delete.reversible` | 3 of 4 | both full runs, 2 reruns |
+| `write.set_cell` | 2 of 3 that finished | first run timed out |
+| `write.set_cell_precision` | 2 of 4 | |
+| `write.copy` | 2 of 4 | |
+| `long.read_every_file_then_report` | **1 of 5** | |
+
+Nothing the model sees changed between the two runs: the eval offers no GUI
+tools, and the planner, agent and file adapters are the same code. So read the
+table as variance, not regression:
+
+- **One run is worth about ±2 tasks.** 15/18 and 14/18 are the same result. Most
+  of the difference is the model sometimes naming a path the grant does not
+  cover (`delete.reversible`, `write.copy`), which the broker refuses, correctly.
+- **`long.read_every_file_then_report` is a real weakness at 8B**, not bad luck.
+  It passed once in five. The model loses track of which of six files it has
+  already read. The 3/3 long-horizon score above was the lucky sample.
+
+The invariants held on every one of these runs. The model varies; the runtime's
+guarantees did not.
+
 ### What has not been measured
 
-No frontier model has been scored. No multi-run variance. The suite is 18 tasks
-and only three run long -- a start, not a resolution.
+No frontier model has been scored. Variance so far is two full runs plus reruns of
+the tasks that moved, which is enough to show it matters, not enough to put error
+bars on it. The suite is 18 tasks and only three run long -- a start, not a
+resolution.
 
 ---
 

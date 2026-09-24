@@ -21,6 +21,9 @@ All notable changes to minos are recorded here. The format follows
   `MINOS_SANDBOX_ALLOW_DOWNGRADE=1`. Every run records what actually confined it.
 - A live GUI harness, `tests/gui/live_check.py`. It drives disposable windows on a real
   desktop and checks what each window received.
+- A second benchmark run of `qwen3:8b` with the 600s limit: 14/18, against 15/18
+  before. With reruns of the tasks that moved, EVALUATION.md now reports
+  per-task variance rather than a single number.
 - Community files: CONTRIBUTING, a code of conduct, issue and pull request templates,
   this changelog, and private vulnerability reporting.
 
@@ -50,6 +53,20 @@ All notable changes to minos are recorded here. The format follows
   fallback.
 - A sandboxed script could list directories outside its workspace.
 - Test isolation: `.env` values loaded by one test leaked into later ones.
+- **Grants did not match through symlinks.** A target was compared by its resolved
+  path and the grant by the path as written. On macOS, where `/var` is
+  `/private/var`, a grant for a workspace in the temp directory matched nothing in
+  it. On Ubuntu, `proc.spawn:/bin/echo` never matched, because `/bin` is `/usr/bin`.
+  A grant's fixed prefix is now resolved when it is made.
+- **Two runs could hold the state lock at once.** A run that read the lock file
+  while another was still writing its pid took it for a crashed one and deleted
+  it. That broke the audit chain. On Windows, a failed delete on release could
+  also leave the lock held until every other run timed out.
+- **On Linux and macOS the sandbox broke numpy, pandas and openpyxl.** It gave
+  them no read access to system libraries or the mime tables.
+- CI type-checked only as Linux, so Windows-only code failed there unnoticed. It now
+  checks all three platforms, and posts failing test names where they can be read
+  without signing in.
 
 ## [0.1.0a1] - 2026-09-22
 

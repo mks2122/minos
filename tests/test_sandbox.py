@@ -8,6 +8,7 @@ mechanism.
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
@@ -192,12 +193,19 @@ def test_the_script_starts_in_the_workspace(sandbox, workspace):
 
 def test_parent_interpreter_settings_do_not_leak(sandbox, workspace, monkeypatch):
     """-E: a PYTHONPATH pointing at the user's code must not be inherited."""
-    monkeypatch.setenv("PYTHONPATH", str(Path.home()))
+    # A marker directory, not the home directory: uv installs Python under the
+    # home directory, so sys.path legitimately contains it on CI. The old check
+    # only passed on Windows because repr() doubled the backslashes.
+    marker = workspace.root.parent / "users-own-code"
+    marker.mkdir()
+    monkeypatch.setenv("PYTHONPATH", str(marker))
 
-    result = run(sandbox, workspace, "import sys; print(repr(sys.path))")
+    result = run(sandbox, workspace, "import sys; print('\\n'.join(sys.path))")
 
     assert result.ok
-    assert str(Path.home()) not in result.stdout
+    assert os.path.normcase(str(marker)) not in {
+        os.path.normcase(p) for p in result.stdout.splitlines()
+    }
 
 
 # -- artifact resolution is not negotiable ---------------------------------

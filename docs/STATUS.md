@@ -1,6 +1,6 @@
 # Status
 
-Last updated 24 Sep 2026. **755 tests passing, 8 skipped. Reference eval 18/18,
+Last updated 24 Sep 2026. **760 tests passing, 8 skipped. Reference eval 18/18,
 0 invariant violations. Ruff clean, mypy strict clean.**
 
 Written so nobody has to guess which parts are real.
@@ -87,16 +87,15 @@ a remote model. See [LOCAL.md](LOCAL.md).
 | | |
 |---|---|
 | A model completes a real task end to end | `qwen3:8b` converted a PDF to a Word document unaided -- chose `code.run`, wrote the script itself, promoted it through the broker, verified, then undone with the chain intact |
-| Long-horizon tasks in the suite | Three, and the model passed **3/3** |
-| A model scored on the current suite, published | **15/18 (83%)**, artifact committed. See [EVALUATION.md](../EVALUATION.md) |
+| Long-horizon tasks in the suite | Three. The model passed 3/3 once, then 2/3; one of them passes 1 time in 5 |
+| A model scored on the current suite, published | **15/18 and 14/18** over two full runs, both artifacts committed. See [EVALUATION.md](../EVALUATION.md) |
 
 Alpha means the evidence exists, not that the work is done. What alpha does
 *not* claim, in the project's own words:
 
-- No frontier model has been scored, and no multi-run variance measured. One run
-  of one 8B model on one laptop overstates dependability.
-- Two of the three failures were timeouts rather than wrong answers. The limit
-  has been raised; the published table is the run as measured, not a rerun.
+- No frontier model has been scored. Variance is two full runs plus reruns of the
+  tasks that moved: enough to show a single run is worth about ±2 tasks, not enough
+  for error bars.
 - A bug in the broker is still a full bypass. It remains in-process, which
   `PLAN.md` §11 wanted split at M6.
 - GUI control is Windows-only, and synthetic input *delivery* is exercised by
