@@ -35,9 +35,12 @@ That is a narrower claim than "secure", and it is deliberately narrower.
 
 ## ⚠️ A bug in the broker is a full bypass
 
-There is **no second line of defence** on macOS or Windows.
+There is **no second line of defence** for anything the broker mediates.
 
-Kernel-level confinement is not portable: Linux has Landlock and seccomp, macOS's `sandbox-exec` is deprecated and Endpoint Security requires an Apple entitlement, and Windows AppContainer is awkward and poorly documented. So on every platform, **the broker's own mediation is the enforcement.**
+The sandbox now has kernel confinement on all three platforms (see below), but that
+confines *code the model writes*. It does nothing for `fs.write`, `proc.spawn`,
+`app.open` or `ui.input`, which the broker executes directly. For those, **the
+broker's own mediation is the enforcement.**
 
 That is defensible only because of invariant I1 — the planner has no filesystem handle, no subprocess API, no network client and no input device, so the broker is not a side-channel check but the *only path* to I/O. It is a chokepoint, not an advisory.
 
@@ -100,38 +103,104 @@ The chain is tamper-**evident**, not tamper-proof. Detecting a full-file rewrite
 
 ---
 
-## The sandbox is a jail, not a security boundary
+## What confines code the model writes
 
-`code.run` executes code an LLM wrote. What contains it is a subprocess with a
-scrubbed environment, a working-directory convention, a patched `socket` module
-and (on POSIX) resource limits. **None of that is enforced by the kernel.** The
-script runs as the same user, with the same filesystem permissions, as the
-runtime itself.
+`code.run` executes code an LLM wrote. Three questions decide what happens to it:
+**who wrote it**, **what the kernel here will enforce**, and **what is left if it
+escapes**.
 
-What it does stop:
+### The first question is the origin, not the mechanism
+
+| Origin | Containment | Why |
+|---|---|---|
+| `local-planner` | Confined subprocess | A model on this machine, on a task you typed. Its failure mode is a **wrong** script, not a targeted one |
+| `remote-planner` | Container | The task is yours; the context that produced the code is not one you can see |
+| `shared-skill` | Container | Induced from someone else's trajectory |
+| `downloaded` | Container | Assume it is trying |
+
+This is the actual security decision; the sandbox is only how it is carried out.
+An untrusted origin with no container engine **raises** rather than falling back
+— quietly weakening the containment of code you do not trust is the failure this
+policy exists to prevent. `--allow-unconfined` overrides that explicitly, and the
+downgrade is recorded as one in the audit log.
+
+### The second question is the platform
+
+| Platform | Mechanism | Filesystem | Network | Limits |
+|---|---|---|---|---|
+| **Linux** | Landlock (ABI ≥ 1) + seccomp-bpf | Kernel: only the workspace and the interpreter's own prefix exist | Kernel: `socket(2)` and friends return EPERM | `RLIMIT_AS`, `NPROC`, `NOFILE`, `CORE` |
+| **macOS** | `sandbox-exec` seatbelt profile | Kernel: `(deny default)`, reads allow-listed, writes only in the workspace | Kernel: `(deny network*)` | `RLIMIT_*` |
+| **Windows** | Low-integrity token + Job Object | Kernel for **writes** (mandatory integrity). **Reads are not confined** | In-process only | Job Object: memory, process count, kill-on-close |
+| anything else | none | in-process only | in-process only | none |
+
+Both POSIX mechanisms are applied by the child to itself, before the script's
+first line: they survive `exec` and cannot be revoked, so the child is the right
+place and it runs as ordinary Python rather than in the window between `fork` and
+`exec`. Windows needs the parent to act, so the child is created **suspended**,
+assigned to the job, and only then resumed — there is no instant in which it runs
+unconstrained.
+
+Detection is a **probe**, not a version check. `sandbox-exec` is deprecated and
+may be removed; a kernel may have Landlock compiled out. Both are tried once and
+cached, and `minos doctor` prints what this machine actually offers.
+
+### The third question is what is left over
+
+On every platform, regardless of the kernel:
 
 | | |
 |---|---|
-| Network access | `socket.socket` raises before the script's first line. Defeats urllib, requests, httpx — everything ordinary |
+| Network | `socket.socket` raises before the script's first line. Defeats urllib, requests, httpx — everything ordinary |
 | Credential theft from the environment | Allow-list then deny-list; `ANTHROPIC_API_KEY` and friends are not present |
-| Runaway execution | Wall-clock kill, output truncation, `RLIMIT_AS` and `RLIMIT_NPROC` on POSIX |
+| Process spawning | `subprocess.Popen`, `os.system` and `os.exec*` refused by an audit hook, which cannot be uninstalled once added |
+| Reads, writes and directory listings outside the workspace | Refused by audit hooks on `open`, `os.listdir`, `os.scandir` and `glob`, matched on the **resolved real path** so `..` and symlinks do not help. Not covered: `os.stat` and `os.path.exists`, which raise no audit event, so a script can still ask whether one path it already knows exists |
+| Runaway execution | Wall-clock kill, output truncation, and the per-platform limits above |
 | Corrupting its inputs | Materials are copies |
 
-What it does **not** stop, and is not claimed to:
+**And what that layer does not stop, stated plainly:**
 
-- `ctypes`, which can call `socket(2)` directly and bypass the patched module
-- `subprocess`, which can spawn anything the user can run
-- Reading any file the user can read. The cwd is a convention, not a jail
-- Anything at all on Windows in terms of memory or process limits — there is no
-  `RLIMIT_AS` equivalent without Job Objects
+- **`ctypes` is not blocked by default, and this is a deliberate trade.** Refusing
+  `ctypes.dlopen` breaks numpy, pandas and openpyxl, which load their own extension
+  libraries through it — and on Windows it breaks `import ctypes` outright, because
+  the module binds `kernel32` at import time. That is most of the sandbox's
+  usefulness traded for a layer a determined script walks around anyway. What
+  contains `ctypes` is the *kernel* row above: seccomp refuses the socket syscalls
+  whatever ctypes does, Landlock refuses the paths, and the Windows token refuses
+  the writes. `SubprocessSandbox(confine_ctypes=True)` turns it on for a script you
+  know needs no compiled packages.
+- **A library handle already open is still a handle.** The audit hook stops a script
+  obtaining a *new* pointer into libc; it does not reach one an imported package is
+  holding.
+- **On Windows and macOS-without-seatbelt, reads are not confined by the kernel.**
+  The mandatory integrity policy is no-write-up, not no-read-up. The read and listing
+  hooks stop ordinary Python, but a script that reaches `ReadFile` through `ctypes`
+  can read any file your account can, including `~/.gitconfig` and anything else in
+  your home directory. Verified, not inferred. An AppContainer with an explicit
+  capability set would close that and is the next step, not this one. Until then,
+  on Windows treat the sandbox as **write-contained and network-contained, not
+  read-contained**, and do not run code you would not let read your home directory.
+- **Where no kernel mechanism exists at all**, everything above is in-process and
+  therefore advisory. The runtime says so — in `doctor`, in every `CodeResult`, and
+  by refusing outright when `require_confinement` is set. That check is made for
+  each run, while the child is still suspended, not against what the platform
+  advertises: a token that fails to lower means the script never starts.
 
-**This is the right trade for the threat that exists** — code written by a local
-model against the user's own task, which fails by being wrong rather than by
-being hostile — and **the wrong trade for code from anywhere else.** A
-downloaded skill, a shared recipe or a remote planner changes the threat, and
-the containment has to change with it. `SandboxBackend` is a protocol so a
-container or microVM implementation can replace this without anything above it
-changing.
+### Nothing is assumed, including by this document
+
+Every run records what actually confined it, and the report distinguishes
+`enforced:` from `unavailable:`:
+
+```
+low-integrity+job -- writes confined to the workspace by mandatory integrity;
+enforced: socket module patched, audit hook (9 events), filesystem allow-list;
+unavailable: rlimits (no resource module on this platform),
+             ctypes refusal (off by default; it breaks numpy and pandas)
+```
+
+A control that is absent and silent is worse than one that is absent. The escape
+attempts in `tests/test_confinement.py` are the mechanism that keeps this section
+true; one of them replaces an older test that asserted process spawning was *not*
+blocked, which was honest, and left the hole open for sixteen milestones.
 
 The effect that reaches the user is separately protected: `code.materialize` is
 an ordinary `fs.write`, checkpointed and hash-verified, and it is the only way
@@ -163,7 +232,9 @@ Anyone who can read that directory can read every file the agent has touched.
 
 ## Known limitations in the current pre-alpha
 
-- No kernel-level confinement on any platform yet
+- Kernel confinement covers `code.run` only; the broker's other operations have none
+- Windows confines sandbox *writes* but not *reads*; an AppContainer would close that
+- The container backend is not exercised by CI, which has no engine available
 - No network capability enforcement — `net.http` scopes parse and match, but nothing consumes them yet
 - No process sandboxing for `proc.spawn`
 - `NullOracle` means some effects are recorded as unverified; the rate is published rather than hidden

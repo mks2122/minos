@@ -1,6 +1,6 @@
 # Status
 
-Last updated 22 Sep 2026. **692 tests passing, 4 skipped. Reference eval 18/18,
+Last updated 24 Sep 2026. **755 tests passing, 8 skipped. Reference eval 18/18,
 0 invariant violations. Ruff clean, mypy strict clean.**
 
 Written so nobody has to guess which parts are real.
@@ -17,7 +17,7 @@ Written so nobody has to guess which parts are real.
 | **Tier router** | L1 → L2 → L3 with recorded degradation and published fallback rate |
 | **L1** | Filesystem (9 operations), process spawn, **`app.open`** (default handler), memory recall |
 | **L2** | Tabular: cell-level workbook operations. CSV built in, backends pluggable |
-| **L2.5** | **The sandbox**: `code.run` writes and runs Python in a jailed workspace; `code.materialize` promotes one artifact through the broker as an ordinary checkpointed, verified `fs.write` |
+| **L2.5** | **The sandbox**: `code.run` writes and runs Python in a kernel-confined workspace (Landlock+seccomp, a low-integrity token, or seatbelt), or a container when the code's origin is not trusted; `code.materialize` promotes one artifact through the broker as an ordinary checkpointed, verified `fs.write` |
 | **L3** | Click / type / key / screenshot. **Real on Windows** via `SendInput`, with `Ctrl+Alt+Esc` to abort; stub driver elsewhere |
 | **Grounding** | `ui.click` takes an element name and resolves it against the UI Automation tree; ambiguity raises rather than guessing; invoking avoids moving the cursor |
 | **Planner** | Protocol, scripted, Claude (manual tool loop), **local** (any OpenAI-compatible server) |
@@ -44,8 +44,9 @@ Written so nobody has to guess which parts are real.
 | **Real input delivery is untested** | Every synthetic event's *encoding* is tested; delivery is not, because a test suite must not drive the developer's cursor. Exercised by hand only |
 | **Frontier model runs** | The Claude planner is tested against a fake client only. **No remote model has been scored on the eval suite** (a local one has: 12/15) |
 | **`net.http`** | Registered as a capability; no adapter implements it |
-| **Sandbox is not a security boundary** | A jailed subprocess, not a kernel boundary. It stops badly written code, not code trying to escape. See SECURITY.md |
-| **Kernel confinement** | Landlock/seccomp/AppContainer. The broker's mediation is the only enforcement today |
+| **Sandbox reads on Windows** | Writes are confined by a low-integrity token; reads are not. Windows' mandatory policy is no-write-up, and closing the rest needs an AppContainer |
+| **Kernel confinement outside `code.run`** | Landlock, seccomp, seatbelt and the Windows token confine code the model writes. The broker's other operations have only the broker's own mediation |
+| **Container backend unexercised in CI** | `ContainerSandbox` is implemented and tested against its command line; no CI runner here has an engine, so no end-to-end container run has been scored |
 | **Audit anchoring** | The chain is tamper-evident, not tamper-proof. An external anchor is not implemented |
 | **Native file events** | The watcher polls. inotify / FSEvents / ReadDirectoryChangesW would be faster but are three different APIs with three sets of bugs |
 | **OS-wide window history** | Only openings *this runtime* performed are recorded. A document you double-clicked in Explorer is invisible |
@@ -100,7 +101,9 @@ Alpha means the evidence exists, not that the work is done. What alpha does
   `PLAN.md` §11 wanted split at M6.
 - GUI control is Windows-only, and synthetic input *delivery* is exercised by
   hand rather than by a test.
-- The sandbox is a jail, not a kernel boundary.
+- The sandbox has kernel confinement on all three platforms, but it covers `code.run`
+  only, it confines writes and not reads on Windows, and no end-to-end container run
+  has been scored.
 
 ## Next
 

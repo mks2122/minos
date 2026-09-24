@@ -42,6 +42,13 @@ DEFAULTS: dict[str, str] = {
     "MINOS_MAX_STEPS": "20",
     "MINOS_STATE": ".minos",
     "MINOS_SANDBOX_TIMEOUT": "60",
+    # What runs the model's code, and what that implies about trusting it.
+    # "auto" asks the origin policy (minos.sandbox.origin): locally written code
+    # gets the confined subprocess, anything else gets a container.
+    "MINOS_SANDBOX_BACKEND": "auto",
+    "MINOS_SANDBOX_ORIGIN": "local-planner",
+    "MINOS_SANDBOX_IMAGE": "python:3.12-slim",
+    "MINOS_SANDBOX_ALLOW_DOWNGRADE": "0",
     "MINOS_CHECKPOINT_DAYS": "7",
     "MINOS_CHECKPOINT_GB": "2",
     "MINOS_CONTEXT_TOKENS": "6144",
@@ -107,6 +114,10 @@ class Settings:
     max_steps: int
     state: str
     sandbox_timeout: float
+    sandbox_backend: str
+    sandbox_origin: str
+    sandbox_image: str
+    sandbox_allow_downgrade: bool
     checkpoint_days: float
     checkpoint_gb: float
     context_tokens: int
@@ -135,6 +146,7 @@ class Settings:
             f"  local model: {self.model}",
             f"  remote     : {self.remote_model}",
             f"  offline    : {'yes' if self.offline else 'no'}",
+            f"  sandbox    : {self.sandbox_backend} backend, code treated as {self.sandbox_origin}",
         ]
         for name in sorted(os.environ):
             if name.startswith("MINOS_") and any(m in name for m in _SECRET_MARKERS):
@@ -188,6 +200,10 @@ def settings(dotenv: Path | str | None = ".env") -> Settings:
         max_steps=int(_as_float(values["MINOS_MAX_STEPS"], 20)),
         state=values["MINOS_STATE"],
         sandbox_timeout=_as_float(values["MINOS_SANDBOX_TIMEOUT"], 60.0),
+        sandbox_backend=values["MINOS_SANDBOX_BACKEND"],
+        sandbox_origin=values["MINOS_SANDBOX_ORIGIN"],
+        sandbox_image=values["MINOS_SANDBOX_IMAGE"],
+        sandbox_allow_downgrade=_as_bool(values["MINOS_SANDBOX_ALLOW_DOWNGRADE"]),
         checkpoint_days=_as_float(values["MINOS_CHECKPOINT_DAYS"], 7.0),
         checkpoint_gb=_as_float(values["MINOS_CHECKPOINT_GB"], 2.0),
         context_tokens=int(_as_float(values["MINOS_CONTEXT_TOKENS"], 6144)),

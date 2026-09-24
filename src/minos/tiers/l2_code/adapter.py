@@ -31,15 +31,17 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from ...oracles import FileHashOracle, NullOracle
 from ...sandbox import (
+    BackendChoice,
+    CodeOrigin,
     CodeResult,
     SandboxBackend,
-    SubprocessSandbox,
     Workspace,
     missing_import,
+    select_backend,
 )
 from ...types import ActionRequest, EffectClass, EffectContract, Grant, Invocation, Tier
 from ..base import CapabilityManifest, OperationUnsupported, Preparation
@@ -54,12 +56,55 @@ class CodeAdapter:
     One workspace per adapter instance, which is one per run. Artifacts persist
     across steps within a run — a script writes a file, a later step promotes it
     — and vanish with the workspace.
+
+    **What contains the script is decided by where it came from**, not by a
+    setting someone tuned once. ``origin`` is the input to that decision and
+    :func:`minos.sandbox.select_backend` is the policy; the chosen backend and
+    the confinement it actually got are written into the effect contract, so the
+    audit log records which of them ran this step rather than leaving a reader
+    to assume the strongest one.
     """
 
     state: Path
-    backend: SandboxBackend = field(default_factory=SubprocessSandbox)
+    origin: CodeOrigin = CodeOrigin.LOCAL_PLANNER
+    prefer: str = "auto"
+    """``auto`` applies the origin policy; ``subprocess`` or ``container`` override it."""
+    allow_downgrade: bool = False
+    """Whether untrusted code may run in the subprocess jail when no container
+    engine exists. Refusing is the default, because silently weakening the
+    containment of code you do not trust is the failure this is here to stop."""
+    backend: SandboxBackend | None = None
+    """Set explicitly to bypass the policy entirely — mostly for tests."""
     timeout: float = 60.0
     _workspace: Workspace | None = field(default=None, init=False, repr=False)
+    _choice: BackendChoice | None = field(default=None, init=False, repr=False)
+
+    @property
+    def sandbox(self) -> SandboxBackend:
+        """The backend, chosen once per adapter and then kept.
+
+        Chosen lazily so that constructing an adapter cannot fail: an untrusted
+        origin with no container engine raises, and that belongs at the first
+        ``code.run``, where it can be reported as a refused action, rather than
+        at start-up where it would stop the whole runtime.
+        """
+        backend = self.backend
+        if backend is None:
+            self._choice = select_backend(
+                self.origin,
+                prefer=self.prefer,
+                allow_downgrade=self.allow_downgrade,
+                default_timeout=self.timeout,
+            )
+            backend = cast(SandboxBackend, self._choice.backend)
+            self.backend = backend
+        return backend
+
+    def describe_containment(self) -> str:
+        """One line for ``doctor``, the trace, and anyone asking what ran where."""
+        backend = self.sandbox
+        described = getattr(backend, "describe", None)
+        return f"{self.origin.value} -> " + (described() if described else backend.name)
 
     manifest = CapabilityManifest(
         adapter="l2.code",
@@ -101,7 +146,7 @@ class CodeAdapter:
         def execute(_: Invocation) -> CodeResult:
             for material in materials:
                 workspace.add_material(Path(material))
-            result: CodeResult = self.backend.run(workspace, str(code), timeout=timeout)
+            result: CodeResult = self.sandbox.run(workspace, str(code), timeout=timeout)
             if not result.ok:
                 # A traceback is a worse answer than the name of the thing to
                 # install, and the runtime knows which import failed.
@@ -131,8 +176,9 @@ class CodeAdapter:
                 # the user -- code.materialize -- is fully verified.
                 oracle=NullOracle(),
                 expect=(
-                    "runs a script in the sandbox; its result is unverifiable by "
-                    "construction and it reaches nothing outside the workspace"
+                    f"runs a script in the {self.sandbox.name} sandbox "
+                    f"({self.describe_containment()}); its result is unverifiable "
+                    "by construction and it reaches nothing outside the workspace"
                 ),
             ),
             execute=execute,

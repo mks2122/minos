@@ -10,12 +10,20 @@ what it produced becomes a *retroactive* effect contract that the broker
 checkpoints and verifies like any other. The computation is unverified; the
 effect on the real machine is not.
 
-See docs/PLAN-GENERALITY.md for the argument, and `runner` for what the jail
-does and does not enforce.
+What contains the script depends on where the code came from. `origin` holds
+that policy: code the local planner wrote for this user's own task runs in the
+confined subprocess of `runner`, and code from anywhere else runs in the
+container of `container`, which does not share a namespace with the user. See
+docs/PLAN-GENERALITY.md for the argument, `confine` for what each platform's
+kernel will actually enforce, and SECURITY.md for what none of it stops.
 """
 
 from __future__ import annotations
 
+from .confine import Confinement
+from .confine import detect as detect_confinement
+from .container import ContainerSandbox, ContainerUnavailable
+from .origin import BackendChoice, CodeOrigin, select_backend
 from .packages import (
     RECOMMENDED,
     PackageStatus,
@@ -24,20 +32,34 @@ from .packages import (
     missing_import,
     survey,
 )
-from .runner import CodeResult, SandboxBackend, SubprocessSandbox, scrubbed_environment
+from .runner import (
+    CodeResult,
+    SandboxBackend,
+    SubprocessSandbox,
+    Unconfined,
+    scrubbed_environment,
+)
 from .workspace import Artifact, Workspace
 
 __all__ = [
     "RECOMMENDED",
     "Artifact",
+    "BackendChoice",
+    "CodeOrigin",
     "CodeResult",
+    "Confinement",
+    "ContainerSandbox",
+    "ContainerUnavailable",
     "PackageStatus",
     "SandboxBackend",
     "SubprocessSandbox",
+    "Unconfined",
     "Workspace",
     "available_packages",
     "describe_for_planner",
+    "detect_confinement",
     "missing_import",
     "scrubbed_environment",
+    "select_backend",
     "survey",
 ]
