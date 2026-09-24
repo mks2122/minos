@@ -53,6 +53,7 @@ def cmd_run(args: argparse.Namespace) -> int:
     from .checkpoint import FileCheckpointStore
     from .memory import FileWatcher, MemoryStore
     from .router import Router
+    from .sandbox import CodeOrigin
     from .scopes import ScopeSet
     from .tiers.base import Adapter
     from .tiers.l1_system import (
@@ -182,7 +183,13 @@ def cmd_run(args: argparse.Namespace) -> int:
                 MemoryAdapter(memory, roots=(workspace,)),
                 ProcessAdapter(),
                 TabularAdapter(),
-                CodeAdapter(state=state),
+                CodeAdapter(
+                    state=state,
+                    origin=CodeOrigin(args.code_origin),
+                    prefer=args.sandbox,
+                    allow_downgrade=args.allow_unconfined,
+                    timeout=args.sandbox_timeout,
+                ),
                 *gui_adapters,
             )
         ),
@@ -558,6 +565,8 @@ def cmd_eval(args: argparse.Namespace) -> int:
 def build_parser() -> argparse.ArgumentParser:
     # Environment and .env supply the defaults; a typed flag overrides them,
     # because a flag someone typed is the most specific intent available.
+    from .sandbox import CodeOrigin
+
     cfg = settings()
 
     parser = argparse.ArgumentParser(
@@ -656,6 +665,33 @@ def build_parser() -> argparse.ArgumentParser:
         dest="trace",
         action="store_false",
         help="do not write a session transcript to .minos/sessions/",
+    )
+    run.add_argument(
+        "--sandbox",
+        choices=("auto", "subprocess", "container"),
+        default=cfg.sandbox_backend,
+        help="what runs the model's code (default: auto, decided by --code-origin)",
+    )
+    run.add_argument(
+        "--code-origin",
+        choices=tuple(o.value for o in CodeOrigin),
+        default=cfg.sandbox_origin,
+        help=(
+            "who wrote the code. Only local-planner is trusted with the "
+            "subprocess jail; everything else needs a container"
+        ),
+    )
+    run.add_argument(
+        "--sandbox-timeout",
+        type=float,
+        default=cfg.sandbox_timeout,
+        help="seconds a single sandboxed script may run (default: %(default)s)",
+    )
+    run.add_argument(
+        "--allow-unconfined",
+        action="store_true",
+        default=cfg.sandbox_allow_downgrade,
+        help="let untrusted code run without a container when none is available",
     )
     run.add_argument("--state", default=cfg.state)
     run.add_argument(

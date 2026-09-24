@@ -16,11 +16,15 @@ uv.lock.bak
 .coverage
 htmlcov/
 
-# minos runtime state — never commit audit logs, checkpoints or sandboxes
+# minos runtime state — never commit audit logs, checkpoints or sandboxes.
+# Anchored to the state directory: a bare `sandbox/` also matched
+# src/minos/sandbox/, so every new file in the sandbox package was silently
+# untracked and `git status` said nothing.
 *.jsonl
 .minos/
+**/.minos/
 checkpoints/
-sandbox/
+.minos/sandbox/
 
 # Local configuration. .env.example is the committed one.
 .env

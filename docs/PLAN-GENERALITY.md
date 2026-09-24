@@ -249,6 +249,22 @@ the threat, and that is a different threat.
 The subprocess jail is designed to be replaced: `code.run` takes a sandbox
 backend, and the container becomes one implementation of it.
 
+**Revisited, and the trigger above is now the switch.** `ContainerSandbox`
+implements `SandboxBackend`, and `minos.sandbox.origin` decides between them from
+where the code came from rather than from a setting: `local-planner` keeps the
+subprocess, and `remote-planner`, `shared-skill` and `downloaded` get a container
+or a refusal. Every objection in the list above survives, because none of them
+was about *Linux* containers — which is what Docker or Podman runs here, on
+Windows too, through WSL2. What was rejected was making a container the default
+for the common case, and it still is not the default for the common case.
+
+The subprocess path did not stay as it was either: it now carries Landlock and
+seccomp on Linux, a low-integrity token and a Job Object on Windows, and a
+seatbelt profile on macOS. "A jailed subprocess with no network, a scrubbed
+environment and hard resource limits" understated what was needed even for the
+buggy-not-hostile threat, because *buggy* code reads the user's home directory
+by accident just as readily.
+
 ---
 
 ## 8. Open questions

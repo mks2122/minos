@@ -303,6 +303,43 @@ def _config_section() -> list[str]:
     return lines
 
 
+def _confinement_section() -> list[str]:
+    """What the kernel will actually enforce on code the model writes.
+
+    The most important two lines doctor prints, and the reason they are printed
+    rather than assumed: the same runtime is confined by Landlock on one machine
+    and by nothing at all on another, and until this existed the only way to
+    find out which was to read the source and guess at your kernel version.
+    """
+    from .sandbox import CodeOrigin, SubprocessSandbox, detect_confinement
+    from .sandbox.confine import container_engine
+
+    confinement = detect_confinement()
+    verdict = "kernel-enforced" if confinement.kernel_enforced else "NOT kernel-enforced"
+    lines = ["", f"  confinement: {confinement.name} ({verdict})"]
+    lines.append(f"    {confinement.detail}")
+    lines.append(f"    in-process : {', '.join(SubprocessSandbox().in_process_layers())}")
+
+    engine = container_engine()
+    if engine:
+        from .sandbox import ContainerSandbox
+
+        # Installed is not running, and the difference decides whether untrusted
+        # code can execute at all. Worth the second it costs to actually ask.
+        running = ContainerSandbox().available()
+        state = "running" if running else "installed but not running"
+        lines.append(f"    container  : {engine} {state}")
+        if not running:
+            lines.append("                 start it before running code of untrusted origin.")
+    else:
+        lines.append(
+            "    container  : none found. Code from outside this machine "
+            f"({', '.join(o.value for o in CodeOrigin if not o.trusted)})"
+        )
+        lines.append("                 will be refused rather than run in the subprocess jail.")
+    return lines
+
+
 def _sandbox_section() -> list[str]:
     """What the sandbox can import, and what it cannot.
 
@@ -345,6 +382,7 @@ def render(report: Report) -> str:
         lines.append(f"  models     : {', '.join(report.installed_models)}")
 
     lines += _config_section()
+    lines += _confinement_section()
     lines += _sandbox_section()
 
     lines += [

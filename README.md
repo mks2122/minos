@@ -2,7 +2,7 @@
   <img src="assets/hero.svg" alt="minos" width="100%">
 </p>
 
-## minos 🗝️
+## MINOS 🗝️
 
 ---
 
@@ -21,7 +21,7 @@
 <p align="center">
   <a href="docs/LOCAL.md"><img src="https://img.shields.io/badge/RUNS-100%25%20OFFLINE-2ea043?style=flat-square&labelColor=3a4350" alt=""></a>
   <a href="docs/STATUS.md"><img src="https://img.shields.io/badge/STATUS-ALPHA-d29922?style=flat-square&labelColor=3a4350" alt=""></a>
-  <a href="EVALUATION.md"><img src="https://img.shields.io/badge/TESTS-692%20PASSING-2ea043?style=flat-square&labelColor=3a4350" alt=""></a>
+  <a href="EVALUATION.md"><img src="https://img.shields.io/badge/TESTS-755%20PASSING-2ea043?style=flat-square&labelColor=3a4350" alt=""></a>
 </p>
 
 **A desktop agent that can't do anything you didn't allow — and can undo what it did.**
@@ -166,8 +166,27 @@ decided to compute"* — and the runtime **counts and publishes that gap** rathe
 inventing a green tick. The effect on your machine stays fully verified and fully
 reversible.
 
-> ⚠️ **The sandbox is a jail, not a security boundary.** It stops badly written code,
-> not code trying to escape. See [SECURITY.md](SECURITY.md).
+**What contains that script depends on where the code came from.** Code your local
+model wrote for your own task runs in a confined subprocess: Landlock and seccomp on
+Linux, a low-integrity token and a Job Object on Windows, a `sandbox-exec` profile on
+macOS, and on every platform a patched `socket`, refused `subprocess.Popen` and a
+filesystem allow-list. Code from anywhere else — a shared skill, a remote planner,
+anything downloaded — runs in a container with no network, no capabilities and
+nothing of yours in the namespace, or does not run at all.
+
+```console
+$ minos doctor
+  confinement: landlock+seccomp (kernel-enforced)
+    Landlock ABI 5 confines the filesystem to the workspace;
+    seccomp-bpf refuses the socket syscalls on x86_64
+```
+
+Every run records what actually confined it, because the same runtime is confined by
+Landlock on one machine and by nothing at all on another, and a result that does not
+say which is one nobody can reason about. What each platform does *not* stop is in
+[SECURITY.md](SECURITY.md) — on Windows, reads are not confined; where no kernel
+mechanism exists, the in-process layer stops a script that wanders off and not one
+that is trying.
 
 ### The three invariants
 
@@ -252,31 +271,6 @@ easy one.
 
 ---
 
-## Status: alpha (0.1.0a1)
-
-**692 tests. Reference suite 18/18 with 0 invariant violations. `qwen3:8b` scores
-15/18 (83%) fully offline on an 8 GB laptop GPU**, including 3/3 on long-horizon
-tasks and 6/6 on the refusal tasks.
-
-Alpha means the evidence exists, not that the work is done.
-
-**What alpha does not claim:**
-
-- No frontier model has been scored, and no multi-run variance measured. One run of
-  one 8B model on one laptop overstates dependability.
-- **A bug in the broker is a full bypass.** It is the only line of defence; kernel
-  confinement is not portable and is not implemented.
-- GUI control is **Windows only**. Synthetic input *delivery* is exercised by hand,
-  not by a test — a test suite must not drive the developer's cursor.
-- The sandbox is a jail, not a kernel boundary.
-- macOS is Tier 2: CI-green, never hand-verified.
-
-**Do not point this at data you cannot afford to lose.**
-
-Platforms: Windows and Linux (Tier 1), macOS (Tier 2). Runs natively, not in WSL2.
-
----
-
 ## Evaluation
 
 ```bash
@@ -296,8 +290,12 @@ invariants** checked on every task — properties that must hold whatever the ag
 did, which is the only way to evaluate a runtime whose capabilities are generated at
 runtime rather than enumerated.
 
-Full method, current numbers, and what is *not* measured:
-**[EVALUATION.md](EVALUATION.md)**.
+`qwen3:8b` scores **15/18** here, fully offline on an 8 GB laptop GPU — 3/3 on the
+long-horizon tasks, 6/6 on refusal. That is one run of one 8B model on one machine,
+and two of the three failures were timeouts rather than wrong answers.
+
+Full method, the conditions that number was measured under, and what is *not*
+measured: **[EVALUATION.md](EVALUATION.md)**.
 
 ---
 
@@ -305,7 +303,7 @@ Full method, current numbers, and what is *not* measured:
 
 ```bash
 uv sync --all-extras
-uv run pytest                      # 692 passing
+uv run pytest                      # 755 passing
 uv run ruff check src tests
 uv run ruff format --check src tests
 uv run mypy                        # strict

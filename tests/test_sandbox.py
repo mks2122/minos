@@ -399,16 +399,29 @@ def test_workspace_usage_is_reportable(workspace):
     assert workspace.usage_bytes() >= 1024
 
 
-def test_os_system_is_not_blocked_and_we_say_so(sandbox, workspace):
-    """Documenting the boundary: this jail does not stop process spawning.
+def test_process_spawning_is_blocked(sandbox, workspace):
+    """Spawning was the escape: a child inherits none of the in-process layers.
 
-    Recorded as a test so the limitation cannot quietly stop being true without
-    someone noticing. See SECURITY.md.
+    This test used to assert the opposite and say so in its name. The limitation
+    was real and is now closed on every platform.
+
+    Note *where* it is closed: the import succeeds and the spawn does not.
+    Refusing the import would break pypdf, which imports subprocess at module
+    scope for a branch it never takes -- so the block is an audit hook on
+    ``subprocess.Popen``, which is the more durable layer anyway because an
+    audit hook cannot be removed once installed.
     """
-    result = run(sandbox, workspace, "import subprocess; print(subprocess.run is not None)")
+    result = run(sandbox, workspace, "import subprocess; subprocess.run(['echo', 'pwned'])")
 
-    assert result.ok
-    assert "True" in result.stdout
+    assert not result.ok
+    assert "not permitted in the minos sandbox" in result.stderr
+
+
+def test_os_system_is_blocked(sandbox, workspace):
+    result = run(sandbox, workspace, "import os; os.system('echo pwned')")
+
+    assert not result.ok
+    assert "not permitted in the minos sandbox" in result.stderr
 
 
 def test_environment_is_not_inherited_wholesale(sandbox, workspace, monkeypatch):
