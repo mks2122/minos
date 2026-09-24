@@ -157,6 +157,14 @@ def compare(
     if isinstance(oracle, NullOracle):
         return True, "unverified (NullOracle)", []
 
+    if getattr(oracle, "kind", "") == "screen":
+        # A window title and size say nothing about whether a click worked:
+        # most clicks change neither, and focusing a window changes the title
+        # without changing anything true. Judging by it halted real tasks on
+        # both counts, so it is recorded and never used as a verdict.
+        moved = before != after
+        return True, f"unverified (screen {'changed' if moved else 'unchanged'})", []
+
     if isinstance(oracle, FileTreeOracle):
         collateral = oracle.collateral(before, after)
         declared = {str(Path(p).expanduser().resolve()) for p in oracle.declared}

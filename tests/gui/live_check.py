@@ -35,6 +35,7 @@ from minos.checkpoint import FileCheckpointStore  # noqa: E402
 from minos.router import Router  # noqa: E402
 from minos.scopes import ScopeSet  # noqa: E402
 from minos.tiers.l3_gui import GuiAdapter  # noqa: E402
+from minos.tiers.l3_gui.ghost import GhostCursor  # noqa: E402
 from minos.tiers.l3_gui.uia import AmbiguousElement, UiaTree  # noqa: E402
 from minos.tiers.l3_gui.windows import (  # noqa: E402
     FocusLost,
@@ -146,7 +147,11 @@ def main() -> int:
 
     main_window = Window(WINDOW, work)
     decoy = Window(OTHER, work)
-    driver = WindowsDriver()
+    # The ghost is on for every check below: they must all still pass with it
+    # drawn over the targets, which is what proves it is click-through and
+    # never takes focus.
+    ghost = GhostCursor(glide=0.2, dwell=0.15)
+    driver = WindowsDriver(ghost=ghost)
 
     try:
 
@@ -258,6 +263,41 @@ def main() -> int:
                     return str(exc)
             raise AssertionError("typed after the panic key")
 
+        def pixel(x: int, y: int) -> int:
+            dc = ctypes.windll.user32.GetDC(0)
+            try:
+                return int(ctypes.windll.gdi32.GetPixel(dc, x, y)) & 0xFFFFFF
+            finally:
+                ctypes.windll.user32.ReleaseDC(0, dc)
+
+        @check("the ghost is drawn at the target, and does not take focus")
+        def _() -> str:
+            driver.focus(WINDOW)
+            x, y = UiaTree().find("Body").centre
+            driver.show(x, y, "click 'Body'")
+            time.sleep(0.2)
+            colour = pixel(x + 3, y + 10)
+            expect(colour == 0x00006AFF, f"pixel under the ghost is {colour:06x}")
+            handle, _ = find_window(WINDOW)
+            expect(driver._user32.GetForegroundWindow() == handle, "ghost took focus")
+            return f"orange at {ghost.position}, focus unchanged"
+
+        @check("a coordinate click lands through the ghost and returns the cursor")
+        def _() -> str:
+            driver.focus(WINDOW)
+            main_window.forget()
+            here = ctypes.wintypes.POINT()
+            ctypes.windll.user32.GetCursorPos(ctypes.byref(here))
+            x, y = UiaTree().find("Body").centre
+            driver.show(x, y, "click 'Body'")  # tip exactly on the click point
+            driver.click(x, y)
+            after = ctypes.wintypes.POINT()
+            ctypes.windll.user32.GetCursorPos(ctypes.byref(after))
+            driver.key("ctrl+s")
+            expect(main_window.wait_for("ctrl+s|") is not None, "click did not land")
+            expect((here.x, here.y) == (after.x, after.y), f"cursor left at {after.x},{after.y}")
+            return "window got the click; cursor back where it was"
+
         # -- the full path: router, broker, approval, adapter, real driver --
 
         def rig(approve: bool) -> tuple[Router, Broker, list[str]]:
@@ -341,6 +381,7 @@ def main() -> int:
 
     finally:
         driver.release()
+        ghost.close()
         main_window.close()
         decoy.close()
         threading.Event().wait(0.2)

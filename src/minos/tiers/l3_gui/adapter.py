@@ -47,9 +47,10 @@ _OPERATIONS = ("ui.click", "ui.type", "ui.key", "ui.screenshot")
 class ScreenOracle:
     """Deliberately weak evidence, and labelled as such.
 
-    ``verifiable()`` returns True because a screen digest *is* an observation --
-    but every docstring and the README say plainly what it is worth. A screen
-    tells you what was rendered, not what is true.
+    ``verifiable()`` is False. The observation is recorded, so the audit log
+    shows what the screen looked like, but it never decides whether an action
+    worked: a click usually changes neither the title nor the size, and
+    focusing a window changes the title without anything true changing.
     """
 
     driver: GuiDriver
@@ -64,7 +65,7 @@ class ScreenOracle:
         }
 
     def verifiable(self) -> bool:
-        return True
+        return False
 
 
 class GuiAdapter:
@@ -122,6 +123,7 @@ class GuiAdapter:
             x, y = _coords(request.params)
 
             def click(_: Invocation) -> None:
+                self._show(x, y, f"click ({x}, {y})")
                 self.driver.click(x, y, str(request.params.get("button", "left")))
 
             return self._acting(request, click, oracle, window, f"click at ({x}, {y}) in {window}")
@@ -132,6 +134,7 @@ class GuiAdapter:
                 raise OperationUnsupported("ui.type requires 'text'")
 
             def type_text(_: Invocation) -> None:
+                self._show_focus(f"type {str(text)!r}")
                 self.driver.type_text(str(text))
 
             return self._acting(
@@ -147,6 +150,7 @@ class GuiAdapter:
             raise OperationUnsupported("ui.key requires 'chord'")
 
         def key(_: Invocation) -> None:
+            self._show_focus(f"press {chord}")
             self.driver.key(str(chord))
 
         return self._acting(request, key, oracle, window, f"press {chord} in {window}")
@@ -190,6 +194,9 @@ class GuiAdapter:
                     f"the window changed while looking for {element!r}; nothing was clicked"
                 )
 
+            # Show the target before acting on it, whichever way it is pressed.
+            self._show(*found.centre, f"click {found.name!r}")
+
             if button == "left" and tree.invoke(found):
                 # Invoked through the accessibility layer: the physical cursor
                 # never moved, so the user can keep working.
@@ -208,6 +215,16 @@ class GuiAdapter:
         )
 
     # -- helper ------------------------------------------------------------
+
+    def _show(self, x: int, y: int, label: str) -> None:
+        show = getattr(self.driver, "show", None)
+        if show is not None:
+            show(x, y, label)
+
+    def _show_focus(self, label: str) -> None:
+        show = getattr(self.driver, "show_focus", None)
+        if show is not None:
+            show(label)
 
     def _aim(self, window: str) -> None:
         focus = getattr(self.driver, "focus", None)

@@ -159,6 +159,14 @@ class _INPUT(ctypes.Structure):
     _fields_ = (("type", _DWORD), ("union", _INPUTUNION))
 
 
+class _POINT(ctypes.Structure):
+    _fields_ = (("x", _LONG), ("y", _LONG))
+
+
+class _RECT(ctypes.Structure):
+    _fields_ = (("left", _LONG), ("top", _LONG), ("right", _LONG), ("bottom", _LONG))
+
+
 def _user32() -> Any:
     if sys.platform != "win32":  # pragma: no cover - guarded by the caller
         raise RuntimeError("WindowsDriver requires Windows")
@@ -280,6 +288,12 @@ class WindowsDriver:
     input with no gaps is the classic way to make automation look flaky."""
 
     panic: panic_watcher | None = None
+    ghost: Any = None
+    """A :class:`~minos.tiers.l3_gui.ghost.GhostCursor`, or None for no ghost."""
+
+    restore_cursor: bool = True
+    """Put the person's cursor back after a coordinate click. The agent borrows
+    the one system cursor for the click; it should not keep it."""
     _user32: Any = field(default=None, init=False, repr=False)
     _target: int = field(default=0, init=False, repr=False)
 
@@ -388,6 +402,38 @@ class WindowsDriver:
         """Stop holding input to a window. The next action may go anywhere."""
         self._target = 0
 
+    # -- showing intent ----------------------------------------------------
+
+    def show(self, x: int, y: int, label: str) -> None:
+        """Point the ghost at (x, y) before acting there. No-op without one."""
+        if self.ghost is not None:
+            self._guard()
+            self.ghost.point(x, y, label)
+
+    def show_focus(self, label: str) -> None:
+        """Point the ghost at whatever has keyboard focus: where typing lands."""
+        if self.ghost is None:
+            return
+        at = self._focus_point()
+        if at is not None:
+            self.show(*at, label)
+
+    def _focus_point(self) -> tuple[int, int] | None:
+        from .uia import UiaTree, available
+
+        if available():
+            with contextlib.suppress(Exception):
+                focused = UiaTree().focused()
+                if focused is not None and focused.visible:
+                    # Near the left edge, where a caret usually is, rather than
+                    # the middle of a wide field.
+                    return (focused.left + min(12, focused.width // 2), focused.centre[1])
+        handle = self._user32.GetForegroundWindow()
+        rect = _RECT()
+        if handle and self._user32.GetWindowRect(handle, ctypes.byref(rect)):
+            return ((rect.left + rect.right) // 2, (rect.top + rect.bottom) // 2)
+        return None
+
     # -- input -------------------------------------------------------------
 
     def click(self, x: int, y: int, button: str = "left") -> None:
@@ -404,11 +450,15 @@ class WindowsDriver:
         absolute_y = int(y * 65535 / max(height - 1, 1))
         down, up = _BUTTONS[button]
 
+        before = _POINT()
+        had_position = bool(self._user32.GetCursorPos(ctypes.byref(before)))
         self._send(
             self._mouse(_MOUSEEVENTF_MOVE | _MOUSEEVENTF_ABSOLUTE, absolute_x, absolute_y),
             self._mouse(down, absolute_x, absolute_y),
             self._mouse(up, absolute_x, absolute_y),
         )
+        if self.restore_cursor and had_position:
+            self._user32.SetCursorPos(before.x, before.y)
 
     def type_text(self, text: str) -> None:
         """Unicode scan codes, so this types what it was given.
