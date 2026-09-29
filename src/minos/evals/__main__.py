@@ -4,6 +4,7 @@
     uv run python -m minos.evals --json out.json      # machine-readable
     uv run python -m minos.evals --baseline out.json  # regression check
     uv run python -m minos.evals --planner claude     # needs an API key
+    uv run python -m minos.evals --planner openrouter --model openai/gpt-4.1
 
 The scripted run is the one to start from: it establishes that every task in
 the suite is achievable, which is what makes a later model score mean anything.
@@ -17,6 +18,7 @@ import sys
 from pathlib import Path
 
 from ..planner.base import Planner
+from ..planner.providers import PROVIDERS, MissingKey, build_planner, resolve
 from .harness import PlannerFactory, run_suite
 from .suite import SUITE, scripted_factory
 from .task import Task
@@ -40,13 +42,22 @@ _OPERATIONS = (
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="minos.evals")
-    parser.add_argument("--planner", default="scripted", choices=["scripted", "claude", "local"])
+    parser.add_argument(
+        "--planner",
+        default="scripted",
+        choices=["scripted", "claude", "local", *PROVIDERS, "custom"],
+        help="any name from `minos providers` scores that OpenAI-compatible provider",
+    )
     parser.add_argument(
         "--base-url",
         default="http://localhost:11434/v1",
         help="OpenAI-compatible endpoint for --planner local",
     )
-    parser.add_argument("--model", default="claude-opus-5")
+    parser.add_argument(
+        "--model",
+        default="",
+        help="default: claude-opus-5 for claude, qwen3:8b for local, the preset's for a provider",
+    )
     parser.add_argument("--json", type=Path, help="write the full report here")
     parser.add_argument("--baseline", type=Path, help="compare against a previous run")
     parser.add_argument("--only", help="run tasks whose id contains this substring")
@@ -58,11 +69,28 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     if args.planner == "local":
-        factory = _local_factory(args.base_url, args.model)
-        name, model = "local", args.model
+        model = args.model or "qwen3:8b"
+        factory = _local_factory(args.base_url, model)
+        name = "local"
     elif args.planner == "claude":
-        factory = _claude_factory(args.model)
-        name, model = "claude", args.model
+        model = args.model or "claude-opus-5"
+        factory = _claude_factory(model)
+        name = "claude"
+    elif args.planner != "scripted":
+        from ..config import settings
+
+        settings()  # a key kept in .env counts
+        try:
+            provider = resolve(
+                args.planner,
+                model=args.model,
+                base_url=args.base_url if args.planner == "custom" else "",
+            )
+        except (MissingKey, ValueError) as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 2
+        factory = _provider_factory(provider)
+        name, model = provider.name, provider.model
     else:
         factory = scripted_factory
         name, model = "scripted", "n/a"
@@ -95,10 +123,17 @@ def _local_factory(base_url: str, model: str) -> PlannerFactory:
     """Point the suite at a local model and get your own number."""
     from ..planner.local import LocalPlanner
 
-    resolved = "qwen3:8b" if model == "claude-opus-5" else model
+    def factory(task: Task, workspace: Path) -> Planner:
+        return LocalPlanner(operations=_OPERATIONS, base_url=base_url, model=model)
+
+    return factory
+
+
+def _provider_factory(provider: object) -> PlannerFactory:
+    """A fresh planner per task, so no conversation leaks between tasks."""
 
     def factory(task: Task, workspace: Path) -> Planner:
-        return LocalPlanner(operations=_OPERATIONS, base_url=base_url, model=resolved)
+        return build_planner(provider, _OPERATIONS)  # type: ignore[arg-type]
 
     return factory
 

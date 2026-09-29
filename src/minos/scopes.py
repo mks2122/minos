@@ -49,6 +49,8 @@ KNOWN_CAPABILITIES = frozenset(
         "clipboard.write",
         "memory.read",
         "app.open",
+        "browser.open",
+        "user.ask",
         "state.undo",
         "code.run",
     }

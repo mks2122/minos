@@ -262,6 +262,25 @@ which it evicts the schemas themselves and the model stops being able to call to
 `minos doctor` reads what your server actually serves and warns you. Full guide and
 measured VRAM figures: **[docs/LOCAL.md](docs/LOCAL.md)**.
 
+### Hosted models
+
+Anything that speaks OpenAI's chat-completions API works: OpenRouter, OpenAI, Groq,
+Together, DeepSeek, Mistral, Fireworks, Gemini, xAI and Cerebras have presets, and
+`custom` takes any other URL.
+
+```bash
+echo 'OPENROUTER_API_KEY=sk-or-...' >> .env
+uv run minos providers                        # which keys are set, never the keys
+uv run minos run "..." -w ./data --planner openrouter --model openai/gpt-4.1
+uv run minos eval --planner groq              # score it on the suite
+```
+
+A hosted model is a remote model, and the runtime treats it as one. `--offline`
+refuses it, and code it writes for `code.run` goes to a container rather than the
+subprocess jail, because the context that produced the script passed through someone
+else's servers. Pass `--code-origin local-planner` if you accept that trade.
+`--planner claude` stays as Anthropic's API direct.
+
 **Why a local model works here when OSWorld numbers say it shouldn't.** Those numbers
 are about *GUI agents* — look at a screenshot, find a control, click the right pixel,
 fifty times. This runtime prefers typed tools, so the planner's job is to pick one of

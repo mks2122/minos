@@ -41,7 +41,7 @@ from .types import (
     Tier,
 )
 
-__all__ = ["UndoError", "Undoable", "perform_undo", "undoable_actions"]
+__all__ = ["UndoError", "Undoable", "perform_undo", "undoable_actions", "undoable_between"]
 
 
 class UndoError(Exception):
@@ -116,6 +116,15 @@ def undoable_actions(audit: AuditLog, store: CheckpointStore) -> list[Undoable]:
         )
     found.sort(key=lambda u: u.seq, reverse=True)
     return found
+
+
+def undoable_between(
+    audit: AuditLog, store: CheckpointStore, first_seq: int, end_seq: int
+) -> list[Undoable]:
+    """The undoable actions one run wrote: ``first_seq`` up to, not including,
+    ``end_seq``. Newest first, which is the order to undo them in -- two edits
+    to one file unwind back to before the first only that way round."""
+    return [a for a in undoable_actions(audit, store) if first_seq <= a.seq < end_seq]
 
 
 def find(audit: AuditLog, store: CheckpointStore, selector: str) -> Undoable:

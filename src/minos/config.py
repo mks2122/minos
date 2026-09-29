@@ -38,6 +38,9 @@ DEFAULTS: dict[str, str] = {
     "MINOS_BASE_URL": "http://localhost:11434/v1",
     "MINOS_MODEL": "qwen3:8b",
     "MINOS_REMOTE_MODEL": "claude-opus-5",
+    # For a hosted OpenAI-compatible provider (MINOS_PLANNER=openrouter, openai,
+    # groq, ...). Empty means the provider's preset default.
+    "MINOS_HOSTED_MODEL": "",
     "MINOS_OFFLINE": "0",
     "MINOS_MAX_STEPS": "20",
     "MINOS_STATE": ".minos",
@@ -110,6 +113,7 @@ class Settings:
     base_url: str
     model: str
     remote_model: str
+    hosted_model: str
     offline: bool
     max_steps: int
     state: str
@@ -153,6 +157,11 @@ class Settings:
                 lines.append(f"  {name.lower():<11}: set (hidden)")
         if any(k in os.environ for k in ("ANTHROPIC_API_KEY",)):
             lines.append("  anthropic  : API key set (hidden)")
+        from .planner.providers import PROVIDERS
+
+        for provider in PROVIDERS.values():
+            if provider.key_env and os.environ.get(provider.key_env):
+                lines.append(f"  {provider.name:<11}: API key set (hidden)")
         return lines
 
 
@@ -196,6 +205,7 @@ def settings(dotenv: Path | str | None = ".env") -> Settings:
         base_url=values["MINOS_BASE_URL"],
         model=values["MINOS_MODEL"],
         remote_model=values["MINOS_REMOTE_MODEL"],
+        hosted_model=values["MINOS_HOSTED_MODEL"],
         offline=_as_bool(values["MINOS_OFFLINE"]),
         max_steps=int(_as_float(values["MINOS_MAX_STEPS"], 20)),
         state=values["MINOS_STATE"],

@@ -50,7 +50,7 @@ from typing import Any
 from ..scopes import ScopeSet
 from ..types import ActionRequest
 from .base import Done, Observation, Step
-from .claude import SYSTEM_PROMPT
+from .claude import system_prompt
 from .schemas import operation_for_tool, tool_definitions
 
 __all__ = ["SUGGESTED_MODELS", "LocalPlanner", "server_available", "to_openai_tools"]
@@ -157,9 +157,24 @@ class LocalPlanner:
     arguments, which rarely needs visible deliberation. Turning it off is worth
     trying on a slow box -- but on qwen3:8b it was measured at no useful
     benefit, so it is a knob and not a recommendation."""
-    api_key: str = "not-needed"
+    api_key: str = field(default="not-needed", repr=False)
+    label: str = "the local server"
+    """How messages name the endpoint: "the local server", "OpenRouter"."""
+
+    local_server: bool = True
+    """False for a hosted API. Controls the Ollama-only request fields and the
+    small-model prompt suffix, and changes what an error message suggests."""
+
+    headers: tuple[tuple[str, str], ...] = ()
+    """Extra non-secret headers a provider asks for (OpenRouter's attribution)."""
+
+    max_tokens: int = 0
+    """Output cap sent to hosted APIs. Some bill against the requested maximum,
+    so leaving it unbounded can fail an account with plenty of credit."""
+
     _messages: list[dict[str, Any]] = field(default_factory=list, init=False)
     _pending_tool_call_id: str | None = field(default=None, init=False)
+    _nudged: bool = field(default=False, init=False)
 
     context_tokens: int = 16384
     """Context window to ask the server for.
@@ -204,6 +219,12 @@ class LocalPlanner:
             detail = exc.reason if isinstance(exc.reason, str) else ""
 
         if exc.code == 404:
+            if not self.local_server:
+                return (
+                    f"{self.label} does not serve a model called {self.model!r} "
+                    f"({detail or 'not found'}). Check the name in its catalogue and "
+                    "pass it with --model or MINOS_HOSTED_MODEL."
+                )
             installed = self._installed_models()
             listing = ", ".join(installed) if installed else "none found"
             return (
@@ -214,10 +235,14 @@ class LocalPlanner:
                 f"to one of the above."
             )
         if exc.code in (401, 403):
+            if not self.local_server:
+                return f"{self.label} refused the API key ({exc.code}): {detail}"
             return f"the local server refused the request ({exc.code}): {detail}"
-        return (
-            f"the local server at {self.base_url} returned HTTP {exc.code}: {detail or exc.reason}"
-        )
+        if exc.code == 402:
+            return f"{self.label} says the account is out of credit (402): {detail}"
+        if exc.code == 429:
+            return f"{self.label} is rate limiting this key (429): {detail}"
+        return f"{self.label} at {self.base_url} returned HTTP {exc.code}: {detail or exc.reason}"
 
     def _explain_timeout(self, exc: BaseException) -> str:
         """A slow model is not an absent server, and the fixes differ entirely.
@@ -226,6 +251,11 @@ class LocalPlanner:
         `<think>` block before their first tool call, and on a laptop GPU that
         alone can outlast a short timeout.
         """
+        if not self.local_server:
+            return (
+                f"{self.label} did not answer within {self.timeout:.0f}s ({exc}). "
+                "Raise MINOS_PLANNER_TIMEOUT or pick a faster model."
+            )
         return (
             f"the local model did not answer within {self.timeout:.0f}s ({exc}). "
             "The server is reachable; it is still generating. "
@@ -238,7 +268,7 @@ class LocalPlanner:
         """Best effort. A failure here must not replace the real error."""
         url = f"{self.base_url.rstrip('/')}/models"
         try:
-            request = urllib.request.Request(url, method="GET")
+            request = urllib.request.Request(url, method="GET", headers=self._headers())
             with urllib.request.urlopen(request, timeout=2.0) as response:
                 data = json.loads(response.read().decode("utf-8"))
             return sorted(str(m.get("id", "")) for m in data.get("data", []) if m.get("id"))
@@ -253,7 +283,7 @@ class LocalPlanner:
         or two thirds of it, and that answer does not need a tokenizer.
         """
         tools = json.dumps(to_openai_tools(tool_definitions(self.operations)))
-        return (len(tools) + len(SYSTEM_PROMPT) + len(LOCAL_SYSTEM_SUFFIX)) // 4
+        return (len(tools) + len(system_prompt(self.operations)) + len(LOCAL_SYSTEM_SUFFIX)) // 4
 
     def context_warning(self, served: int) -> str:
         """Say so when the fixed overhead leaves almost no room to work.
@@ -277,8 +307,9 @@ class LocalPlanner:
 
     def next_action(self, goal: str, observations: list[Observation], scopes: ScopeSet) -> Step:
         if not self._messages:
+            suffix = LOCAL_SYSTEM_SUFFIX if self.local_server else ""
             self._messages.append(
-                {"role": "system", "content": SYSTEM_PROMPT + LOCAL_SYSTEM_SUFFIX}
+                {"role": "system", "content": system_prompt(self.operations) + suffix}
             )
             self._messages.append({"role": "user", "content": self._opening(goal, scopes)})
         elif observations:
@@ -302,14 +333,14 @@ class LocalPlanner:
                 return Done(summary=self._explain_timeout(exc), succeeded=False)
             return Done(
                 summary=(
-                    f"could not reach the local model at {self.base_url}: {exc}. "
-                    "Is the server running?"
+                    f"could not reach {self.label} at {self.base_url}: {exc}. "
+                    + ("Is the server running?" if self.local_server else "Is the network up?")
                 ),
                 succeeded=False,
             )
         except (ValueError, KeyError) as exc:
             return Done(
-                summary=f"the local server returned something unexpected: {exc}",
+                summary=f"{self.label} returned something unexpected: {exc}",
                 succeeded=False,
             )
 
@@ -323,6 +354,22 @@ class LocalPlanner:
         self.last_thinking = _readable_thinking(message.get("content"))
 
         calls = message.get("tool_calls") or []
+        if not calls and not self._nudged:
+            # Small models often narrate "the task is complete" instead of
+            # calling `finish`. One reminder recovers most of those; ending the
+            # run on the first one throws the whole trajectory away.
+            self._nudged = True
+            self._messages.append(
+                {
+                    "role": "user",
+                    "content": (
+                        "Reply with exactly one tool call, not prose. If the goal is "
+                        "met or cannot be met, call `finish`."
+                    ),
+                }
+            )
+            return self.next_action(goal, [], scopes)
+        self._nudged = False
         if not calls:
             text = (message.get("content") or "").strip()
             return Done(
@@ -360,43 +407,55 @@ class LocalPlanner:
     # -- internals ---------------------------------------------------------
 
     def _post(self) -> dict[str, Any]:
-        body = json.dumps(
-            {
-                "model": self.model,
-                "messages": self._compacted(),
-                "tools": to_openai_tools(tool_definitions(self.operations)),
-                "tool_choice": "auto",
-                "temperature": self.temperature,
-                "stream": False,
-                # Honoured by llama.cpp and vLLM. **Ollama's OpenAI-compatible
-                # endpoint ignores this**, so on Ollama the context is whatever
-                # the server was started with -- 4096 by default, regardless of
-                # what the model supports. It then drops the *oldest* messages,
-                # which are the system prompt and the tool schemas, and the
-                # model stops being able to call tools. `minos doctor` reads the
-                # served length from /api/ps and says how to raise it, because
-                # this is invisible from in here.
-                "options": {"num_ctx": self.context_tokens},
-                # Qwen3's documented switch, and ignored by servers and models
-                # that do not implement it. Measured on qwen3:8b here it made no
-                # useful difference -- 110s against 101s, inside the noise -- so
-                # it is offered as a knob rather than sold as a speed-up.
-                **({} if self.thinking else {"chat_template_kwargs": {"enable_thinking": False}}),
-            }
-        ).encode()
+        request_body: dict[str, Any] = {
+            "model": self.model,
+            "messages": self._compacted(),
+            "tools": to_openai_tools(tool_definitions(self.operations)),
+            "tool_choice": "auto",
+            "temperature": self.temperature,
+            "stream": False,
+        }
+        if self.max_tokens:
+            request_body["max_tokens"] = self.max_tokens
+        if self.local_server:
+            request_body.update(
+                {
+                    # Honoured by llama.cpp and vLLM. **Ollama's OpenAI-compatible
+                    # endpoint ignores this**, so on Ollama the context is whatever
+                    # the server was started with -- 4096 by default, regardless of
+                    # what the model supports. It then drops the *oldest* messages,
+                    # which are the system prompt and the tool schemas, and the
+                    # model stops being able to call tools. `minos doctor` reads the
+                    # served length from /api/ps and says how to raise it, because
+                    # this is invisible from in here.
+                    "options": {"num_ctx": self.context_tokens},
+                    # Qwen3's documented switch, and ignored by servers and models
+                    # that do not implement it. Measured on qwen3:8b here it made no
+                    # useful difference -- 110s against 101s, inside the noise -- so
+                    # it is offered as a knob rather than sold as a speed-up.
+                    **(
+                        {}
+                        if self.thinking
+                        else {"chat_template_kwargs": {"enable_thinking": False}}
+                    ),
+                }
+            )
+        # Hosted APIs get neither of those fields: OpenAI rejects a request
+        # carrying a parameter it does not know, rather than ignoring it.
+        body = json.dumps(request_body).encode()
 
         request = urllib.request.Request(
             f"{self.base_url.rstrip('/')}/chat/completions",
             data=body,
-            headers={
-                "Content-Type": "application/json",
-                "Authorization": f"Bearer {self.api_key}",
-            },
+            headers={"Content-Type": "application/json", **self._headers()},
             method="POST",
         )
         with urllib.request.urlopen(request, timeout=self.timeout) as response:
             parsed: dict[str, Any] = json.loads(response.read())
         return parsed
+
+    def _headers(self) -> dict[str, str]:
+        return {**dict(self.headers), "Authorization": f"Bearer {self.api_key}"}
 
     def _opening(self, goal: str, scopes: ScopeSet) -> str:
         listed = "\n".join(f"  {s}" for s in scopes) or "  (none)"

@@ -76,6 +76,7 @@ class Agent:
 
         for index in range(self.limits.max_steps):
             number = index + 1
+            self._emit("waiting", number)
             step = self.planner.next_action(goal, observations, self.broker.scopes)
 
             # Whatever the planner said while deciding. Shown, never acted on.

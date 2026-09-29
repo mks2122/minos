@@ -217,8 +217,9 @@ def test_the_agent_emits_a_full_step(broker, workspace):
     ).run("write it")
 
     kinds = [e.kind for e in seen]
-    assert kinds[:4] == ["plan", "route", "verdict", "result"]
-    assert kinds[-1] == "finish"
+    assert kinds[:5] == ["waiting", "plan", "route", "verdict", "result"]
+    # Every call to the planner is announced, including the one that ends it.
+    assert kinds[-2:] == ["waiting", "finish"]
 
 
 def test_an_unroutable_step_is_reported(broker, workspace):

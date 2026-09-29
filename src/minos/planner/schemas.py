@@ -121,6 +121,46 @@ _SCHEMAS: dict[str, dict[str, Any]] = {
         {"path": _PATH},
         ["path"],
     ),
+    "browser.open": _tool(
+        "browser_open",
+        (
+            "Open a web page in the person's own browser, signed in as them. Use "
+            "this to reach any website -- never the Run dialog or typing a URL. "
+            "The browser and profile are chosen by the person once per site and "
+            "remembered; leave 'profile' out unless the goal names one. The "
+            "result's 'window' is the title to pass as 'window' to the ui_* tools."
+        ),
+        {
+            "url": {"type": "string", "description": "e.g. 'https://www.linkedin.com/feed/'"},
+            "profile": {
+                "type": "string",
+                "description": (
+                    "Only when the goal names one: a profile or browser, e.g. "
+                    "'Work' or 'Edge: Work'."
+                ),
+            },
+        },
+        ["url"],
+    ),
+    "user.ask": _tool(
+        "ask_user",
+        (
+            "Ask the person at the terminal a question and wait for the answer. "
+            "Use it for a decision only they can make -- which account, which of "
+            "two matches, what the text should say -- not for anything you can "
+            "find out with another tool. Offer 'choices' when the answer is one "
+            "of a few options."
+        ),
+        {
+            "question": {"type": "string"},
+            "choices": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Optional. The options to pick from.",
+            },
+        },
+        ["question"],
+    ),
     "code.run": _tool(
         "code_run",
         (

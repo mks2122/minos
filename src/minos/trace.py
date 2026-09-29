@@ -34,7 +34,9 @@ from __future__ import annotations
 import contextlib
 import json
 import os
+import re
 import sys
+import threading
 import time
 import uuid
 from collections.abc import Callable
@@ -48,10 +50,21 @@ __all__ = [
     "Observer",
     "SessionRecorder",
     "fan_out",
+    "printable",
 ]
 
 _MAX_THINKING = 1200
 _MAX_VALUE = 400
+
+# C0 controls except tab, plus DEL and C1. ESC is ASCII, so encoding to ASCII
+# does not remove it, and a model that can print ESC can repaint the terminal:
+# hide a line, fake a prompt, rewrite what an approval appears to say.
+_CONTROL = re.compile(r"[\x00-\x08\x0a-\x1f\x7f-\x9f]")
+
+
+def printable(text: str) -> str:
+    """One line of untrusted text, safe to put on a terminal: ASCII, no controls."""
+    return _CONTROL.sub("?", text).encode("ascii", "replace").decode("ascii")
 
 
 @dataclass(frozen=True, slots=True)
@@ -61,6 +74,7 @@ class Event:
     ``kind`` is a small fixed vocabulary rather than free text, so a listener can
     switch on it without string-matching prose:
 
+    ``waiting``    the planner has been asked for the next step
     ``thinking``   the planner's commentary before it chose
     ``plan``       the action it chose, with arguments
     ``route``      which tier will serve it, and why not a better one
@@ -142,14 +156,73 @@ class ConsolePrinter:
     stream: Any = field(default_factory=lambda: sys.stdout)
     show_thinking: bool = True
     show_code: bool = True
+    spinner: bool | None = None
+    """Animate the wait for the model. None means only on a real terminal,
+    where a carriage return redraws the line instead of littering a log."""
+
+    _spin_stop: threading.Event | None = field(default=None, init=False, repr=False)
+    _spin_thread: threading.Thread | None = field(default=None, init=False, repr=False)
+    _lock: threading.Lock = field(default_factory=threading.Lock, init=False, repr=False)
 
     def __call__(self, event: Event) -> None:
+        self.stop_spinner()
         handler = getattr(self, f"_on_{event.kind}", None)
         if handler is not None:
             handler(event)
         self.stream.flush()
 
+    def stop_spinner(self) -> None:
+        """Stop and erase the waiting line. Safe to call when none is running.
+
+        The run's owner calls this on the way out as well: a planner that raises
+        never sends the event that would otherwise stop it.
+        """
+        stop, thread = self._spin_stop, self._spin_thread
+        if stop is None or thread is None:
+            return
+        stop.set()
+        thread.join(timeout=1.0)
+        self._spin_stop = self._spin_thread = None
+        with self._lock:
+            self.stream.write("\r" + " " * 60 + "\r")
+            self.stream.flush()
+
+    def _animate(self) -> bool:
+        if self.spinner is not None:
+            return self.spinner
+        try:
+            return bool(self.stream.isatty())
+        except Exception:
+            return False
+
     # -- per kind ----------------------------------------------------------
+
+    def _on_waiting(self, event: Event) -> None:
+        # A local model can be silent for half a minute. Without this, a slow
+        # step and a hung one look exactly the same.
+        if not self._animate():
+            return
+        stop = threading.Event()
+        started = time.monotonic()
+        step = event.step
+
+        def spin() -> None:
+            frames = "|/-\\"
+            tick = 0
+            while not stop.is_set():
+                elapsed = int(time.monotonic() - started)
+                with self._lock:
+                    if stop.is_set():
+                        return
+                    frame = frames[tick % len(frames)]
+                    self.stream.write(f"\r  [{step}] waiting for the model {frame} {elapsed}s ")
+                    self.stream.flush()
+                tick += 1
+                stop.wait(0.25)
+
+        self._spin_stop = stop
+        self._spin_thread = threading.Thread(target=spin, name="minos-spinner", daemon=True)
+        self._spin_thread.start()
 
     def _on_thinking(self, event: Event) -> None:
         if not self.show_thinking or not event.text:
@@ -194,8 +267,9 @@ class ConsolePrinter:
     def _write(self, line: str) -> None:
         # errors='replace': a model can emit anything, and an encoding error in
         # the trace must not end the run.
-        text = line.encode("ascii", "replace").decode("ascii")
-        print(text, file=self.stream)
+        text = "\n".join(printable(part) for part in line.split("\n"))
+        with self._lock:
+            print(text, file=self.stream)
 
 
 @dataclass

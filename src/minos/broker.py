@@ -56,7 +56,10 @@ __all__ = [
 Executor = Callable[[Invocation], Any]
 """Runs the invocation. Supplied by the tier, called only by the broker."""
 
-Approver = Callable[[Invocation, AdmissionDecision], bool]
+Approver = Callable[[Invocation, AdmissionDecision], "bool | str"]
+"""Answers a ``prompt`` verdict. ``True`` is a person's yes; a non-empty string
+is a yes *given by a standing policy*, and names it, so the audit log never
+records "human approved" for something no human saw."""
 """Asks a human. Returning True admits the action."""
 
 Compensator = Callable[["ActionRequest"], "Outcome"]
@@ -83,22 +86,14 @@ def always_deny(invocation: Invocation, decision: AdmissionDecision) -> bool:
 
 
 def cli_approver(invocation: Invocation, decision: AdmissionDecision) -> bool:
-    contract = invocation.contract
-    # ASCII only: a plain Windows console is cp1252 and raises on box drawing.
-    # An approval prompt that crashes is an approval that never happened.
-    print("\n-- approval required " + "-" * 38)
-    print(f"  intent   : {invocation.request.intent}")
-    print(f"  operation: {invocation.request.operation}  [{invocation.tier}]")
-    print(f"  effect   : {contract.effect_class}")
-    if contract.targets:
-        for target in contract.targets:
-            print(f"  target   : {target}")
-    if contract.expect:
-        print(f"  expect   : {contract.expect}")
-    print(f"  why      : {decision.rationale}")
-    if contract.effect_class is EffectClass.IRREVERSIBLE:
-        print("  !! THIS CANNOT BE UNDONE")
-    return input("  allow? [y/N] ").strip().lower() in {"y", "yes"}
+    """Ask at the terminal, with nothing remembered between calls.
+
+    The prompt itself lives in :mod:`minos.approval`; keep one
+    :class:`~minos.approval.SessionApprover` instead when ``[a]lways`` should last.
+    """
+    from .approval import SessionApprover
+
+    return SessionApprover()(invocation, decision)
 
 
 @dataclass
@@ -123,7 +118,8 @@ class Broker:
             return self._record(invocation, decision, status="denied")
 
         if decision.verdict == "prompt":
-            if not self.approver(invocation, decision):
+            answer = self.approver(invocation, decision)
+            if not answer:
                 denied = AdmissionDecision(
                     verdict="deny",
                     rationale=f"human declined: {decision.rationale}",
@@ -132,7 +128,11 @@ class Broker:
                 return self._record(invocation, denied, status="denied")
             decision = AdmissionDecision(
                 verdict="allow",
-                rationale=f"human approved: {decision.rationale}",
+                rationale=(
+                    f"{answer}: {decision.rationale}"
+                    if isinstance(answer, str)
+                    else f"human approved: {decision.rationale}"
+                ),
                 matched_scopes=decision.matched_scopes,
             )
 
@@ -221,6 +221,21 @@ class Broker:
             rationale=f"within scope; effect is {contract.effect_class}",
             matched_scopes=tuple(matched),
         )
+
+    def missing_grants(self, invocation: Invocation) -> tuple[Grant, ...]:
+        """The grants this invocation needs that no allow scope covers.
+
+        Pure, like :meth:`admit`. It exists so a person can be asked "grant
+        this?" about the exact subject, instead of someone parsing a rationale.
+        A grant refused by an explicit deny rule is left out: a deny rule is a
+        decision someone already made, and offering to override it would undo it.
+        """
+        missing: list[Grant] = []
+        for grant in invocation.grants or self._derive_grants(invocation):
+            permitted, deciding = self.scopes.check(grant.capability, grant.subject)
+            if not permitted and deciding is None:
+                missing.append(grant)
+        return tuple(missing)
 
     # -- internals ---------------------------------------------------------
 

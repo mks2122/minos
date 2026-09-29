@@ -1,6 +1,7 @@
 """``minos`` -- the command line.
 
     minos doctor                                 can this machine run fully offline?
+    minos providers                              hosted and local model providers
     minos demo                                   see it work, no API key needed
     minos run "set Q3 revenue to 48200" -w ./data --allow-write
     minos eval                                   run the task suite
@@ -19,13 +20,32 @@ from __future__ import annotations
 
 import argparse
 import sys
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any, TypeVar
 
 from . import __version__
 from .config import settings
 
+if TYPE_CHECKING:
+    from .broker import Approver
+    from .planner.base import Planner, Trajectory
+    from .trace import Observer
+    from .types import Grant
+
+_T = TypeVar("_T")
+
 DEFAULT_STATE = Path(".minos")
+
+
+def _planner_choices() -> tuple[str, ...]:
+    from .planner.providers import PROVIDERS
+
+    return ("auto", "local", "claude", *PROVIDERS, "custom")
+
+
+PLANNER_CHOICES = _planner_choices()
 
 _CREDENTIALS_HINT = """
 This looks like missing credentials. Either:
@@ -46,10 +66,48 @@ def _looks_like_missing_credentials(exc: BaseException) -> bool:
 # -- minos run --------------------------------------------------------------
 
 
+@dataclass
+class RunReport:
+    """What one run did, for a caller that keeps going afterwards.
+
+    ``first_seq`` to ``end_seq`` (exclusive) are the audit entries this run
+    wrote, which is exactly the set "undo what that just did" should reach --
+    no further back, and nothing a later run did.
+    """
+
+    code: int
+    trajectory: Trajectory | None = None
+    first_seq: int = 0
+    end_seq: int = 0
+    missing: tuple[Grant, ...] = ()
+    """Grants that denied steps needed and no scope covered. Never applied here:
+    scopes are fixed for the length of a run."""
+
+
 def cmd_run(args: argparse.Namespace) -> int:
+    return execute_run(args).code
+
+
+def execute_run(
+    args: argparse.Namespace,
+    *,
+    approver: Approver | None = None,
+    extra_scopes: Sequence[str] = (),
+    context: str = "",
+    observer: Observer | None = None,
+    planner: Planner | None = None,
+) -> RunReport:
+    """``minos run``, for a caller that wants the result and not just an exit code.
+
+    ``extra_scopes`` join the granted set before the run starts; they cannot
+    arrive during it. ``context`` is what earlier goals in a conversation did,
+    handed to the planner after the goal itself. ``planner`` replaces the one
+    the flags would build, which is how the tests drive a real run.
+    """
     from .agent import Agent, AgentLimits
+    from .approval import LastThinking, SessionApprover, terminal_ask
     from .audit import AuditLog
-    from .broker import Broker, cli_approver
+    from .broker import Broker
     from .checkpoint import FileCheckpointStore
     from .memory import FileWatcher, MemoryStore
     from .router import Router
@@ -58,9 +116,11 @@ def cmd_run(args: argparse.Namespace) -> int:
     from .tiers.base import Adapter
     from .tiers.l1_system import (
         AppAdapter,
+        BrowserAdapter,
         FilesystemAdapter,
         MemoryAdapter,
         ProcessAdapter,
+        UserAdapter,
     )
     from .tiers.l2_adapters import TabularAdapter
     from .tiers.l2_code import CodeAdapter
@@ -70,7 +130,7 @@ def cmd_run(args: argparse.Namespace) -> int:
     workspace = Path(args.workspace).expanduser().resolve()
     if not workspace.is_dir():
         print(f"error: {workspace} is not a directory", file=sys.stderr)
-        return 2
+        return RunReport(code=2)
 
     state = Path(args.state).expanduser().resolve()
     # code.run is granted by default: the sandbox reaches nothing the user
@@ -94,6 +154,17 @@ def cmd_run(args: argparse.Namespace) -> int:
     elif args.allow_gui:
         # The virtual device drives the real desktop. Never implicit.
         scopes.append("ui.input:*")
+    allow_browser = bool(getattr(args, "allow_browser", False) or args.allow_gui)
+    if allow_browser:
+        # Opening a page is a read; what is done in it goes through ui.input.
+        scopes.append("browser.open:*")
+    # Someone is at the terminal to answer. Not under --yes, which means
+    # "unattended", and not through a pipe, where input() would read the pipe.
+    can_ask = not args.yes and sys.stdin.isatty()
+    if can_ask:
+        scopes.append("user.ask:*")
+    # Granted by a person between runs, one exact path each. See minos.approval.
+    scopes.extend(extra_scopes)
 
     operations: tuple[str, ...] = (
         "fs.read",
@@ -114,8 +185,12 @@ def cmd_run(args: argparse.Namespace) -> int:
         "code.run",
         "code.materialize",
     )
+    if allow_browser:
+        operations += ("browser.open",)
     if args.allow_gui:
         operations += ("ui.click", "ui.type", "ui.key", "ui.screenshot")
+    if can_ask:
+        operations += ("user.ask",)
 
     # Index the workspace so "the excel from yesterday" has something to
     # resolve against. Scoped to the workspace, so memory never learns about
@@ -131,11 +206,20 @@ def cmd_run(args: argparse.Namespace) -> int:
     if args.watch:
         watcher.start()
 
-    try:
-        planner = _planner(args, operations)
-    except ImportError as exc:
-        print(f"error: {exc}", file=sys.stderr)
-        return 2
+    def release() -> None:
+        # A one-shot CLI could leave these to process exit. A conversation runs
+        # many goals in one process, and a leaked watcher keeps scanning.
+        watcher.stop()
+        memory.close()
+
+    if planner is None:
+        try:
+            planner = _planner(args, operations)
+        except ImportError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            release()
+            return RunReport(code=2)
+    code_origin = _code_origin(args)
 
     gui_adapters: tuple[Adapter, ...] = ()
     panic: Any = None
@@ -157,13 +241,22 @@ def cmd_run(args: argparse.Namespace) -> int:
             gui_adapters = (GuiAdapter(driver=WindowsDriver(panic=panic, ghost=ghost)),)
         except RuntimeError as exc:
             print(f"error: {exc}", file=sys.stderr)
-            return 2
+            release()
+            return RunReport(code=2)
 
+    thinking = LastThinking()
+    if approver is None:
+        approver = (
+            (lambda inv, dec: True)
+            if args.yes
+            else SessionApprover(why=thinking.get, gui=getattr(args, "gui_confirm", "all"))
+        )
+    ask = terminal_ask if can_ask else None
     broker = Broker(
         scopes=ScopeSet.parse(scopes),
         audit=AuditLog(state / "audit.jsonl"),
         store=FileCheckpointStore(state / "checkpoints"),
-        approver=(lambda inv, dec: True) if args.yes else cli_approver,
+        approver=approver,
         dry_run=args.dry_run,
     )
     # Live trace to the terminal, and a transcript kept for afterwards. The
@@ -171,21 +264,22 @@ def cmd_run(args: argparse.Namespace) -> int:
     # chain -- see minos.trace.
     recorder = SessionRecorder(state=state, goal=args.goal) if args.trace else None
     printer = ConsolePrinter(show_thinking=not args.quiet, show_code=not args.quiet)
-    observer = fan_out(printer if not args.quiet else None, recorder)
 
     agent = Agent(
-        observer=observer,
+        observer=fan_out(printer if not args.quiet else None, recorder, thinking, observer),
         planner=planner,
         router=Router(
             adapters=(
                 FilesystemAdapter(),
                 AppAdapter(),
+                BrowserAdapter(preferences=memory, ask=ask),
+                UserAdapter(ask=ask),
                 MemoryAdapter(memory, roots=(workspace,)),
                 ProcessAdapter(),
                 TabularAdapter(),
                 CodeAdapter(
                     state=state,
-                    origin=CodeOrigin(args.code_origin),
+                    origin=CodeOrigin(code_origin),
                     prefer=args.sandbox,
                     allow_downgrade=args.allow_unconfined,
                     timeout=args.sandbox_timeout,
@@ -215,6 +309,8 @@ def cmd_run(args: argparse.Namespace) -> int:
         print("\n!! --yes: approvals are auto-granted, including irreversible ones.")
     print()
 
+    first_seq = broker.audit.next_seq()
+    task = _with_context(args.goal, context)
     try:
         if panic is not None:
             print("  !! the agent will use your real mouse and keyboard.")
@@ -224,13 +320,14 @@ def cmd_run(args: argparse.Namespace) -> int:
             print()
             try:
                 with panic:
-                    trajectory = agent.run(args.goal, goal_id="cli")
+                    trajectory = agent.run(task, goal_id="cli")
             finally:
                 if ghost is not None:
                     ghost.close()
         else:
-            trajectory = agent.run(args.goal, goal_id="cli")
+            trajectory = agent.run(task, goal_id="cli")
     except Exception as exc:
+        printer.stop_spinner()
         print(f"\nthe planner failed: {type(exc).__name__}: {exc}", file=sys.stderr)
         if _looks_like_missing_credentials(exc):
             print(_CREDENTIALS_HINT, file=sys.stderr)
@@ -239,7 +336,14 @@ def cmd_run(args: argparse.Namespace) -> int:
             f"({broker.audit.path}, {broker.audit.count} entries).",
             file=sys.stderr,
         )
-        return 2
+        release()
+        # Steps before the failure may have changed files, and those are still
+        # this run's to undo.
+        return RunReport(code=2, first_seq=first_seq, end_seq=broker.audit.next_seq())
+    except BaseException:
+        printer.stop_spinner()
+        release()
+        raise
 
     print()
     print("-" * 64)
@@ -283,13 +387,55 @@ def cmd_run(args: argparse.Namespace) -> int:
         # A quiet watcher is indistinguishable from one that found nothing.
         print(f"  watcher: {problem}", file=sys.stderr)
 
-    return 0 if trajectory.succeeded else 1
+    missing: list[Grant] = []
+    for outcome in trajectory.outcomes:
+        if outcome.status == "denied":
+            missing += [g for g in broker.missing_grants(outcome.invocation) if g not in missing]
+    return RunReport(
+        code=0 if trajectory.succeeded else 1,
+        trajectory=trajectory,
+        first_seq=first_seq,
+        end_seq=broker.audit.next_seq(),
+        missing=tuple(missing),
+    )
+
+
+def _with_context(goal: str, context: str) -> str:
+    """The goal first, then what earlier goals in the conversation did.
+
+    The goal leads so it stays the instruction; the history is background the
+    planner can use to resolve "that file" or "now do the same for B".
+    """
+    if not context.strip():
+        return goal
+    return (
+        f"{goal}\n\n"
+        "Earlier in this session (already done; do not redo it unless asked):\n"
+        f"{context.strip()}"
+    )
+
+
+def _code_origin(args: argparse.Namespace) -> str:
+    """Who wrote the code ``code.run`` will execute, for the sandbox policy.
+
+    A typed flag wins, then MINOS_SANDBOX_ORIGIN if it was actually set. With
+    neither, a hosted model's code is ``remote-planner`` and goes to a
+    container: the task is yours, but the context that produced the script
+    passed through someone else's servers.
+    """
+    if getattr(args, "code_origin", None):
+        return str(args.code_origin)
+    cfg = settings()
+    if cfg.source.get("MINOS_SANDBOX_ORIGIN") == "environment":
+        return cfg.sandbox_origin
+    return "remote-planner" if getattr(args, "planner_hosted", False) else cfg.sandbox_origin
 
 
 def _context_warning(planner: Any, base_url: str) -> str:
     """Compare the planner's fixed overhead against what the server really serves."""
     check = getattr(planner, "context_warning", None)
-    if check is None:
+    if check is None or not getattr(planner, "local_server", True):
+        # Only a local server can be asked what context it really serves.
         return ""
     from .doctor import _served_context
 
@@ -308,10 +454,38 @@ def _planner(args: argparse.Namespace, operations: tuple[str, ...]):  # type: ig
     # on every invocation; --offline still forces it on.
     offline = getattr(args, "offline", False) or cfg.offline
 
+    args.planner_hosted = False
+
     if offline and choice == "claude":
         raise ImportError(
             "--offline was given but --planner claude would call a remote API. "
             "Drop --offline, or start a local server (see: minos doctor)."
+        )
+
+    if choice not in ("auto", "local", "claude"):
+        from .planner.providers import MissingKey, build_planner, resolve
+
+        try:
+            provider = resolve(
+                choice,
+                model=args.model or cfg.hosted_model,
+                base_url=args.base_url if choice == "custom" else "",
+            )
+        except (MissingKey, ValueError) as exc:
+            raise ImportError(str(exc)) from exc
+        if offline and provider.hosted:
+            raise ImportError(
+                f"--offline was given but --planner {choice} is {provider.label} at "
+                f"{provider.base_url}, which is not on this machine."
+            )
+        args.planner_hosted = provider.hosted
+        print(f"planner   : {provider.name} ({provider.label}), model {provider.model}")
+        return build_planner(
+            provider,
+            operations,
+            context_tokens=cfg.context_tokens,
+            timeout=cfg.planner_timeout,
+            thinking=cfg.thinking,
         )
 
     if choice == "auto":
@@ -341,6 +515,7 @@ def _planner(args: argparse.Namespace, operations: tuple[str, ...]):  # type: ig
         )
     if choice != "claude":
         raise ImportError(f"unknown planner {choice!r}")
+    args.planner_hosted = True
     try:
         from .planner.claude import ClaudePlanner
     except ImportError as exc:
@@ -350,6 +525,31 @@ def _planner(args: argparse.Namespace, operations: tuple[str, ...]):  # type: ig
             "and credentials in ANTHROPIC_API_KEY (or `ant auth login`)."
         ) from exc
     return ClaudePlanner(operations=operations, model=args.model or cfg.remote_model)
+
+
+# -- minos providers --------------------------------------------------------
+
+
+def cmd_providers(args: argparse.Namespace) -> int:
+    """Every preset, where it points, and whether its key is set."""
+    from .planner.providers import key_status
+
+    settings()  # load .env, so a key kept there counts
+    print("\n  provider     where    key                         default model")
+    print("  " + "-" * 76)
+    for provider, ready in key_status():
+        where = "local" if provider.local else "hosted"
+        if not provider.key_env:
+            key = "none needed"
+        else:
+            key = f"{provider.key_env} {'set' if ready else 'MISSING'}"
+        print(f"  {provider.name:<12} {where:<8} {key:<27} {provider.default_model or '-'}")
+    print(
+        '\n  minos run "..." --planner openrouter --model openai/gpt-4.1'
+        "\n  custom: MINOS_BASE_URL + MINOS_API_KEY + --model, any OpenAI-compatible server"
+        "\n  claude: Anthropic direct, ANTHROPIC_API_KEY\n"
+    )
+    return 0
 
 
 # -- minos demo -------------------------------------------------------------
@@ -595,8 +795,12 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument(
         "--planner",
         default=cfg.planner,
-        choices=["auto", "local", "claude"],
-        help=f"auto prefers a local server when one is listening (MINOS_PLANNER={cfg.planner})",
+        choices=PLANNER_CHOICES,
+        help=(
+            "auto prefers a local server when one is listening; claude is Anthropic "
+            "direct; any other name is an OpenAI-compatible provider, see "
+            f"`minos providers` (MINOS_PLANNER={cfg.planner})"
+        ),
     )
     run.add_argument(
         "--base-url",
@@ -606,7 +810,10 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument(
         "--model",
         default=None,
-        help=f"MINOS_MODEL={cfg.model} for local, MINOS_REMOTE_MODEL={cfg.remote_model} for claude",
+        help=(
+            f"MINOS_MODEL={cfg.model} for local, MINOS_REMOTE_MODEL={cfg.remote_model} "
+            "for claude, MINOS_HOSTED_MODEL or the preset default for a provider"
+        ),
     )
     run.add_argument("--max-steps", type=int, default=cfg.max_steps)
     run.add_argument(
@@ -646,6 +853,24 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     run.add_argument(
+        "--allow-browser",
+        action="store_true",
+        help=(
+            "let the agent open web pages in your browser (implied by --allow-gui). "
+            "It asks which browser profile to use once per site and remembers."
+        ),
+    )
+    run.add_argument(
+        "--gui-confirm",
+        choices=("commit", "all"),
+        default="commit",
+        help=(
+            "which GUI inputs stop for approval: 'commit' (default) only clicks on "
+            "Post/Send/Delete/Pay..., Ctrl+Enter, multi-line typing and clicks by "
+            "coordinate; 'all' asks for every input"
+        ),
+    )
+    run.add_argument(
         "--gui-window",
         action="append",
         metavar="TITLE",
@@ -675,10 +900,12 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument(
         "--code-origin",
         choices=tuple(o.value for o in CodeOrigin),
-        default=cfg.sandbox_origin,
+        default=None,
         help=(
             "who wrote the code. Only local-planner is trusted with the "
-            "subprocess jail; everything else needs a container"
+            "subprocess jail; everything else needs a container. Default: "
+            "remote-planner when the model is hosted, else "
+            f"MINOS_SANDBOX_ORIGIN={cfg.sandbox_origin}"
         ),
     )
     run.add_argument(
@@ -701,6 +928,9 @@ def build_parser() -> argparse.ArgumentParser:
         help="seconds to wait for another minos process to finish (default: fail)",
     )
     run.set_defaults(func=cmd_run)
+
+    providers = sub.add_parser("providers", help="list model providers and which keys are set")
+    providers.set_defaults(func=cmd_providers)
 
     doctor = sub.add_parser("doctor", help="can this machine run fully offline?")
     doctor.add_argument("--base-url", default=cfg.base_url)
@@ -763,11 +993,21 @@ def main(argv: list[str] | None = None) -> int:
         return eval_main(argv[1:])
 
     args = build_parser().parse_args(argv)
+    code = locked(args, lambda: int(args.func(args)))
+    return 2 if code is None else code
+
+
+def locked(args: argparse.Namespace, body: Callable[[], _T]) -> _T | None:
+    """Run ``body`` holding the state lock that ``args.state`` names.
+
+    Returns None, having said why, when another minos process holds it.
+    Read-only commands (audit, doctor, recall) take no state directory and need
+    no lock. Anything that drives a run or an undo from outside this module
+    goes through here too, so two of them never write one audit chain at once.
+    """
     state = getattr(args, "state", None)
     if state is None:
-        # Read-only commands (audit, doctor, recall) take no state directory and
-        # need no lock.
-        return int(args.func(args))
+        return body()
 
     from .locking import LockBusy, lock_state
 
@@ -777,10 +1017,10 @@ def main(argv: list[str] | None = None) -> int:
     except LockBusy as exc:
         print(f"error: {exc}", file=sys.stderr)
         print("       `minos <command> --wait 60` waits instead of failing.", file=sys.stderr)
-        return 2
+        return None
 
     try:
-        return int(args.func(args))
+        return body()
     finally:
         _apply_retention(state)
         lock.release()

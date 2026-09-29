@@ -76,6 +76,15 @@ CREATE TABLE IF NOT EXISTS opens (
     goal       TEXT
 );
 
+-- Answers a person gave once and should not be asked again: which browser
+-- profile a site belongs to, say. Written only from a person's answer, never
+-- from something the planner read, so a web page cannot plant one.
+CREATE TABLE IF NOT EXISTS preferences (
+    key     TEXT PRIMARY KEY,
+    value   TEXT NOT NULL,
+    updated REAL NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS opens_path ON opens(path);
 CREATE INDEX IF NOT EXISTS opens_ts   ON opens(ts);
 CREATE INDEX IF NOT EXISTS touches_path ON touches(path);
@@ -330,6 +339,22 @@ class MemoryStore:
     def last_opened(self) -> Opening | None:
         found = self.openings(limit=1)
         return found[0] if found else None
+
+    # -- preferences -------------------------------------------------------
+
+    def preference(self, key: str) -> str | None:
+        rows = self._query("SELECT value FROM preferences WHERE key = ?", (key,))
+        return str(rows[0]["value"]) if rows else None
+
+    def remember(self, key: str, value: str, *, now: float | None = None) -> None:
+        self._write(
+            "INSERT INTO preferences(key, value, updated) VALUES (?, ?, ?) "
+            "ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated = excluded.updated",
+            (key, value, time.time() if now is None else now),
+        )
+
+    def forget(self, key: str) -> None:
+        self._write("DELETE FROM preferences WHERE key = ?", (key,))
 
     # -- queries -----------------------------------------------------------
 

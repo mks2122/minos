@@ -8,6 +8,15 @@ All notable changes to minos are recorded here. The format follows
 
 ### Added
 
+- **Hosted providers.** `--planner openrouter` (or `openai`, `groq`, `together`,
+  `deepseek`, `mistral`, `fireworks`, `gemini`, `xai`, `cerebras`) uses any hosted
+  OpenAI-compatible API, and `--planner custom` uses any other one. Local presets
+  exist for `ollama`, `lmstudio`, `llamacpp` and `vllm`. `minos providers` lists them
+  and shows which keys are set. The same names work for `minos eval`.
+- Hosted requests leave out Ollama's `options` and `chat_template_kwargs` fields,
+  because OpenAI rejects parameters it does not know. They also cap `max_tokens`. A
+  refused key, a 402 (out of credit) and a 429 (rate limited) each get their own
+  error message.
 - **Ghost cursor.** With `--allow-gui`, the agent draws its own orange pointer. It
   glides to each target and pauses there before clicking or typing, so you can see
   where it is about to act. It never takes focus, and clicks pass through it.
@@ -28,6 +37,13 @@ All notable changes to minos are recorded here. The format follows
   this changelog, and private vulnerability reporting.
 
 ### Changed
+
+- Code written by a hosted model, including `--planner claude`, is now treated as
+  `remote-planner` and runs in a container, as SECURITY.md's origin policy always
+  said it should. Before this, the default origin was `local-planner` whatever the
+  planner was. `--code-origin` or `MINOS_SANDBOX_ORIGIN` overrides it.
+- `--offline` refuses any provider whose endpoint is not on this machine. A server
+  on the LAN counts as remote.
 
 - Every GUI tool takes a `window`. The window is brought to the front when the action
   runs, and input stops if something else takes focus.
