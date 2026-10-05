@@ -155,8 +155,9 @@ guarantees did not.
 
 No frontier model has been scored. Variance so far is two full runs plus reruns of
 the tasks that moved, which is enough to show it matters, not enough to put error
-bars on it. The suite is 18 tasks and only three run long -- a start, not a
-resolution.
+bars on it. The scores above are on 18 tasks. A 19th, `long.file_the_inbox`, has since
+been added at 25 steps so that compaction is exercised mid-task; no model has
+been scored on it yet. Four tasks running long is a start, not a resolution.
 
 ---
 

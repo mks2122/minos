@@ -146,6 +146,35 @@ def _running_totals_correct(ws: Path, trajectory: Trajectory) -> bool:
 
 # -- tasks -----------------------------------------------------------------
 
+# 24 reports across two years, interleaved so sorting by name is not enough.
+_FILED = [f"report_{year}_{month:02d}.txt" for month in range(1, 13) for year in (2023, 2024)]
+
+
+def _seed_inbox(ws: Path) -> None:
+    inbox = ws / "inbox"
+    inbox.mkdir()
+    for name in _FILED:
+        (inbox / name).write_text(f"{name}\nfigures for the month\n", encoding="utf-8")
+
+
+def _inbox_filed(ws: Path, trajectory: Trajectory) -> bool:
+    """Every report in archive/<year>/, unchanged, and nothing left behind."""
+    if any((ws / "inbox").iterdir()):
+        return False
+    for name in _FILED:
+        year = name.split("_")[1]
+        target = ws / "archive" / year / name
+        if not target.is_file():
+            return False
+        if target.read_text(encoding="utf-8") != f"{name}\nfigures for the month\n":
+            return False
+    return True
+
+
+def _filing_scopes(ws: Path) -> list[str]:
+    return [f"fs.read:{ws}/**", f"fs.write:{ws}/**", f"fs.delete:{ws}/**"]
+
+
 SUITE: list[Task] = [
     Task(
         id="read.cell",
@@ -369,6 +398,23 @@ SUITE: list[Task] = [
         check=_running_totals_correct,
         notes="Reference: 5 steps. Each step depends on the last, so one slip is visible.",
     ),
+    Task(
+        id="long.file_the_inbox",
+        goal=(
+            "inbox/ holds 24 monthly reports named report_<year>_<month>.txt. Move "
+            "each one into archive/<year>/, keeping its name, until inbox/ is empty."
+        ),
+        category="long-horizon",
+        setup=_seed_inbox,
+        scopes=_filing_scopes,
+        max_steps=40,
+        check=_inbox_filed,
+        notes=(
+            "Reference: 25 steps. Long enough that a small context window must "
+            "compact: the opening listing is dropped long before the last move, "
+            "so a model has to re-list or keep count rather than rely on it."
+        ),
+    ),
 ]
 
 
@@ -514,6 +560,18 @@ def reference_script(task: Task, ws: Path) -> list[Step]:
             _req("fs.read", path=str(book)),
             *_reference_running_totals(ws),
             Done(summary="wrote running totals", succeeded=True),
+        ],
+        "long.file_the_inbox": [
+            _req("fs.list", path=str(ws / "inbox")),
+            *[
+                _req(
+                    "fs.move",
+                    source=str(ws / "inbox" / name),
+                    path=str(ws / "archive" / name.split("_")[1] / name),
+                )
+                for name in _FILED
+            ],
+            Done(summary="filed all 24 reports", succeeded=True),
         ],
     }
     return scripts.get(task.id, [Done(summary="no reference solution", succeeded=False)])

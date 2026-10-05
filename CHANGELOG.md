@@ -8,6 +8,15 @@ All notable changes to minos are recorded here. The format follows
 
 ### Added
 
+- **`minos run --resume [SESSION]`** continues a recorded run that was
+  interrupted, crashed or ended early. It starts a fresh conversation primed
+  with what the earlier run did, step by step, rather than replaying the old
+  one: thinking blocks are bound to the conversation that produced them, and a
+  summary is far cheaper. Scopes always come from the flags given now, never
+  from the old session. `minos sessions` lists recorded runs and whether each
+  finished.
+- A 19th eval task, `long.file_the_inbox`, at 25 steps. It is long enough that
+  a small window has to compact mid-task.
 - **Context management that measures tokens.** OpenAI-compatible planners (local
   and hosted) fit each request to the model's window before sending it. The
   system prompt and goal are always kept, the newest steps are kept while they

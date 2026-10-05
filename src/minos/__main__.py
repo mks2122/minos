@@ -133,6 +133,30 @@ def execute_run(
         return RunReport(code=2)
 
     state = Path(args.state).expanduser().resolve()
+
+    # --resume continues a recorded run: its goal (unless a new one was typed)
+    # and a summary of what it did. Never its scopes -- those are the flags
+    # typed now, because a grant must come from the person, before the task.
+    resumed_from = ""
+    if getattr(args, "resume", None) is not None:
+        from .trace import find_session, resume_context
+
+        try:
+            session = find_session(state, args.resume)
+        except LookupError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return RunReport(code=2)
+        args.goal = args.goal or session.goal
+        resumed_from = session.session_id
+        context = resume_context(session) + (f"\n\n{context}" if context.strip() else "")
+        print(
+            f"resuming  : session {session.session_id}, {len(session.steps)} step(s) recorded"
+            + ("" if session.interrupted else " (it had finished)")
+        )
+    if not getattr(args, "goal", ""):
+        print("error: give a goal, or --resume to continue a recorded run", file=sys.stderr)
+        return RunReport(code=2)
+
     # code.run is granted by default: the sandbox reaches nothing the user
     # owns, and its output still needs fs.write to go anywhere.
     scopes = [
@@ -262,7 +286,11 @@ def execute_run(
     # Live trace to the terminal, and a transcript kept for afterwards. The
     # transcript is a debugging record, deliberately separate from the audit
     # chain -- see minos.trace.
-    recorder = SessionRecorder(state=state, goal=args.goal) if args.trace else None
+    recorder = (
+        SessionRecorder(state=state, goal=args.goal, resumed_from=resumed_from)
+        if args.trace
+        else None
+    )
     printer = ConsolePrinter(show_thinking=not args.quiet, show_code=not args.quiet)
 
     agent = Agent(
@@ -725,6 +753,27 @@ def cmd_recall(args: argparse.Namespace) -> int:
 # -- minos skills -----------------------------------------------------------
 
 
+def cmd_sessions(args: argparse.Namespace) -> int:
+    """Recorded runs, newest first, and whether each one finished."""
+    from .trace import list_sessions
+
+    sessions = list_sessions(Path(args.state))
+    if not sessions:
+        print("no recorded sessions")
+        return 0
+    print(f"\n  {'id':<14} {'steps':>5}  {'outcome':<12} goal")
+    print("  " + "-" * 72)
+    for session in sessions[: args.tail]:
+        if session.interrupted:
+            outcome = "interrupted"
+        else:
+            outcome = "succeeded" if session.succeeded else "did not"
+        goal = session.goal if len(session.goal) <= 44 else session.goal[:41] + "..."
+        print(f"  {session.session_id:<14} {len(session.steps):>5}  {outcome:<12} {goal}")
+    print("\n  minos run --resume [ID] continues one; scopes come from the flags you give.\n")
+    return 0
+
+
 def cmd_skills(args: argparse.Namespace) -> int:
     from .skills import SkillStore
 
@@ -787,7 +836,18 @@ def build_parser() -> argparse.ArgumentParser:
     demo.set_defaults(func=cmd_demo)
 
     run = sub.add_parser("run", help="run the agent on a goal")
-    run.add_argument("goal")
+    run.add_argument("goal", nargs="?", default="")
+    run.add_argument(
+        "--resume",
+        nargs="?",
+        const="",
+        default=None,
+        metavar="SESSION",
+        help=(
+            "continue a recorded run: the newest, or the session whose id starts "
+            "with SESSION (see `minos sessions`). Scopes still come from the flags"
+        ),
+    )
     run.add_argument("-w", "--workspace", default=".", help="the only directory in scope")
     run.add_argument("--allow-write", action="store_true", help="grant fs.write")
     run.add_argument("--allow-delete", action="store_true", help="grant fs.delete")
@@ -970,6 +1030,11 @@ def build_parser() -> argparse.ArgumentParser:
     recall.add_argument("phrase")
     recall.add_argument("--state", default=str(DEFAULT_STATE))
     recall.set_defaults(func=cmd_recall)
+
+    sessions = sub.add_parser("sessions", help="list recorded runs, to --resume one")
+    sessions.add_argument("-n", "--tail", type=int, default=20)
+    sessions.add_argument("--state", default=cfg.state)
+    sessions.set_defaults(func=cmd_sessions)
 
     skills = sub.add_parser("skills", help="list or show stored skills")
     skills.add_argument("name", nargs="?")

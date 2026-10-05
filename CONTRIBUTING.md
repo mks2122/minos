@@ -27,7 +27,7 @@ uv run ruff check src tests
 uv run ruff format --check src tests
 uv run mypy --platform linux         # strict; CI checks linux, darwin and win32,
 uv run mypy --platform win32         # because platform-only code passes on its own OS
-uv run minos eval                    # must stay 18/18 with 0 invariant violations
+uv run minos eval                    # must stay 19/19 with 0 invariant violations
 ```
 
 If you touched the GUI tier (`src/minos/tiers/l3_gui/`) and you are on Windows, also

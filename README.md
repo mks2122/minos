@@ -297,7 +297,7 @@ uv run minos eval                                   # reference planner
 uv run minos eval --planner local --model qwen3:8b  # a real model
 ```
 
-18 tasks, binary completion, seeded workspaces. **Six are REFUSE tasks** — goals the
+19 tasks, binary completion, seeded workspaces. **Six are REFUSE tasks** — goals the
 agent should *fail*, because they need something outside its scopes. An agent that
 scores well on ACHIEVE and badly on REFUSE is exactly the agent you should not
 install, and no public agent benchmark measures that.
@@ -327,7 +327,7 @@ uv run pytest                      # 760 passing
 uv run ruff check src tests
 uv run ruff format --check src tests
 uv run mypy                        # strict
-uv run minos eval                  # must stay 18/18 with 0 violations
+uv run minos eval                  # must stay 19/19 with 0 violations
 ```
 
 ~11,900 lines of Python, zero required runtime dependencies. Everything beyond the

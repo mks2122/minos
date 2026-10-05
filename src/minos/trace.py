@@ -49,8 +49,14 @@ __all__ = [
     "Event",
     "Observer",
     "SessionRecorder",
+    "SessionStep",
+    "SessionSummary",
     "fan_out",
+    "find_session",
+    "list_sessions",
+    "load_session",
     "printable",
+    "resume_context",
 ]
 
 _MAX_THINKING = 1200
@@ -284,6 +290,9 @@ class SessionRecorder:
     state: Path
     session_id: str = field(default_factory=lambda: uuid.uuid4().hex[:12])
     goal: str = ""
+    resumed_from: str = ""
+    """The session this run continues, when it is a ``--resume``."""
+
     _path: Path | None = field(default=None, init=False, repr=False)
 
     @property
@@ -293,7 +302,10 @@ class SessionRecorder:
             directory.mkdir(parents=True, exist_ok=True)
             stamp = time.strftime("%Y%m%d-%H%M%S")
             self._path = directory / f"{stamp}-{self.session_id}.jsonl"
-            self._append({"kind": "session", "goal": self.goal, "id": self.session_id})
+            header: dict[str, Any] = {"kind": "session", "goal": self.goal, "id": self.session_id}
+            if self.resumed_from:
+                header["resumed_from"] = self.resumed_from
+            self._append(header)
         return self._path
 
     def __call__(self, event: Event) -> None:
@@ -320,3 +332,139 @@ class SessionRecorder:
                 os.remove(stale)
                 removed += 1
         return removed
+
+
+# -- reading a session back ---------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class SessionStep:
+    operation: str
+    params: dict[str, Any]
+    status: str
+    detail: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class SessionSummary:
+    """What a recorded run did, read back from its transcript."""
+
+    path: Path
+    session_id: str
+    goal: str
+    steps: tuple[SessionStep, ...] = ()
+    finished: bool = False
+    """A ``finish`` event was recorded: the run ended rather than died."""
+
+    succeeded: bool = False
+    summary: str = ""
+
+    @property
+    def interrupted(self) -> bool:
+        return not self.finished
+
+
+def load_session(path: Path) -> SessionSummary:
+    """Parse one transcript. Tolerant: a run that died mid-write leaves a torn line."""
+    session_id, goal = path.stem.rsplit("-", 1)[-1], ""
+    steps: list[SessionStep] = []
+    pending: dict[str, Any] | None = None
+    finished = succeeded = False
+    summary = ""
+    with open(path, encoding="utf-8", errors="replace") as handle:
+        for line in handle:
+            try:
+                event = json.loads(line)
+            except ValueError:
+                continue
+            kind = event.get("kind")
+            data = event.get("data") or {}
+            if kind == "session":
+                goal = str(event.get("goal", ""))
+                session_id = str(event.get("id", session_id))
+            elif kind == "plan":
+                pending = {
+                    "operation": str(event.get("text", "")),
+                    "params": data.get("params") or {},
+                }
+            elif kind == "result" and pending is not None:
+                steps.append(
+                    SessionStep(
+                        operation=pending["operation"],
+                        params=dict(pending["params"]),
+                        status=str(data.get("status", "")),
+                        detail=str(event.get("text", "")),
+                    )
+                )
+                pending = None
+            elif kind == "finish":
+                finished = True
+                succeeded = bool(data.get("succeeded", False))
+                summary = str(event.get("text", ""))
+    return SessionSummary(
+        path=path,
+        session_id=session_id,
+        goal=goal,
+        steps=tuple(steps),
+        finished=finished,
+        succeeded=succeeded,
+        summary=summary,
+    )
+
+
+def list_sessions(state: Path) -> list[SessionSummary]:
+    """Every transcript under ``state``, newest first."""
+    directory = Path(state).expanduser() / "sessions"
+    if not directory.is_dir():
+        return []
+    files = sorted(directory.glob("*.jsonl"), key=lambda p: p.name, reverse=True)
+    return [load_session(path) for path in files]
+
+
+def find_session(state: Path, which: str = "") -> SessionSummary:
+    """The newest session, or the one whose id starts with ``which``.
+
+    Raises ``LookupError`` naming the candidates when the prefix is ambiguous,
+    for the same reason a GUI control with two matches is refused: guessing
+    which run to continue is how the wrong one gets continued.
+    """
+    sessions = list_sessions(state)
+    if not sessions:
+        raise LookupError(f"no recorded sessions under {Path(state) / 'sessions'}")
+    if not which:
+        return sessions[0]
+    matches = [s for s in sessions if s.session_id.startswith(which)]
+    if not matches:
+        raise LookupError(f"no session id starts with {which!r}; see `minos sessions`")
+    if len(matches) > 1:
+        ids = ", ".join(s.session_id for s in matches[:5])
+        raise LookupError(f"{which!r} matches {len(matches)} sessions ({ids}); give more of the id")
+    return matches[0]
+
+
+def resume_context(session: SessionSummary, *, max_steps: int = 40) -> str:
+    """Prime a fresh run with what an earlier one did.
+
+    A new conversation, not the old one replayed: a thinking block is valid
+    only in the conversation that produced it, and a summary costs a fraction
+    of the tokens. The steps come from the runtime's own record of the run, but
+    their details include tool output, which is untrusted; they are offered as
+    background, and the model is told the world may have moved since.
+    """
+    shown = session.steps[-max_steps:]
+    skipped = len(session.steps) - len(shown)
+    lines = [
+        f"This continues an earlier run (session {session.session_id}) that "
+        + ("was interrupted" if session.interrupted else f"ended: {session.summary[:200]}")
+        + ". What it did is below. Files may have changed since: read before you "
+        "rely on anything, and do not redo a step that already succeeded.",
+    ]
+    if skipped:
+        lines.append(f"  ({skipped} earlier steps not shown)")
+    for number, step in enumerate(shown, start=skipped + 1):
+        params = json.dumps(step.params, default=str, sort_keys=True)
+        if len(params) > 160:
+            params = params[:160] + "..."
+        detail = f" -- {step.detail[:160]}" if step.detail and step.status != "ok" else ""
+        lines.append(f"  {number}. {step.operation} {params} -> {step.status}{detail}")
+    return "\n".join(lines)

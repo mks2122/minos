@@ -34,7 +34,7 @@ Written so nobody has to guess which parts are real.
 | **Live trace** | Every step printed as it happens -- the model's reasoning, the code it wrote, the verdict, the result |
 | **Session transcripts** | `.minos/sessions/*.jsonl`, pruned to 20. A debugging record, deliberately *not* the audit chain |
 | **Context management** | Every request to an OpenAI-compatible model is fitted to a token budget before it is sent: system prompt and goal always kept, newest steps kept while they fit, the rest named in one line, an oversized latest result shrunk rather than dropped. Estimates are calibrated against the server's own count; a server overflow is retried once at half the budget; a request that cannot fit fails with a reason. The window is what Ollama really serves, or what a hosted provider reports. Claude stays append-only (thinking blocks forbid edits) and old tool results are cleared server-side |
-| **Long-horizon tasks** | 3 in the suite at 9-16 steps, with unfoolable checks |
+| **Long-horizon tasks** | 4 in the suite, 9 to 25 steps, with unfoolable checks. The 25-step one is long enough that a small window must compact mid-task |
 
 ## Stubbed or absent
 
