@@ -20,8 +20,8 @@
 
 <p align="center">
   <a href="docs/LOCAL.md"><img src="https://img.shields.io/badge/RUNS-100%25%20OFFLINE-2ea043?style=flat-square&labelColor=3a4350" alt=""></a>
-  <a href="docs/STATUS.md"><img src="https://img.shields.io/badge/STATUS-ALPHA-d29922?style=flat-square&labelColor=3a4350" alt=""></a>
-  <a href="EVALUATION.md"><img src="https://img.shields.io/badge/TESTS-760%20PASSING-2ea043?style=flat-square&labelColor=3a4350" alt=""></a>
+  <a href="docs/STATUS.md"><img src="https://img.shields.io/badge/STATUS-BETA-d29922?style=flat-square&labelColor=3a4350" alt=""></a>
+  <a href="EVALUATION.md"><img src="https://img.shields.io/badge/TESTS-987%20PASSING-2ea043?style=flat-square&labelColor=3a4350" alt=""></a>
 </p>
 
 **A desktop agent that can't do anything you didn't allow — and can undo what it did.**
@@ -49,6 +49,11 @@ uv sync --all-extras && uv run python main.py
   a sandbox, and the output is promoted under the same contract as any other write.
 - 🧱 **The planner cannot act.** It runs in its own process that cannot write a file
   or start a program; it can only ask, and the broker decides.
+- 🧠 **Remembers the computer, not the chat.** "The Excel from yesterday" resolves to a
+  path, with the reasons it chose that one.
+- 🔁 **Knows when it is stuck.** A loop guard warns the model the second time the same
+  thing fails and ends the run the third, and every request fits the model's context
+  window, measured in tokens.
 - 🔗 **Hash-chained audit log.** Every admission decision, tamper-evident.
 - 🚫 **Refusal is measured.** A third of the eval suite is things the agent *should
   fail* to do.
@@ -98,7 +103,7 @@ happen. The model tried twice more, was denied twice more, and the run was aband
 a planner that keeps asking for the same forbidden thing is either stuck or being
 driven, and neither improves with another attempt.
 
-**Six of the eighteen eval tasks are goals the agent should fail to complete**,
+**Seven of the twenty-two eval tasks are goals the agent should fail to complete**,
 including one where a file's *contents* try to talk it into widening its own
 authority:
 
@@ -119,8 +124,8 @@ pretending to prevent it.**
 
 | Tier | What it is | Preferred |
 |---|---|---|
-| **L1** system | Native typed calls — filesystem, process, app launch | first |
-| **L2** adapters | Application-aware — cell-level workbook edits | second |
+| **L1** system | Native typed calls — filesystem, process, app launch, asking you | first |
+| **L2** adapters | Application-aware — cell-level workbook edits, web pages by their controls | second |
 | **L2.5** code | A script the model writes, run in a sandbox | third |
 | **L3** GUI | Synthetic mouse and keyboard on your real desktop | last |
 
@@ -201,6 +206,63 @@ filesystem handle, no subprocess API, no network client, no input device.
 pixels, it records which adapters were tried and what was missing. Fallback rate is a
 published metric, not a silent decay.
 
+### The agent loop
+
+The loop is deliberately small: every interesting decision has already been made by
+the broker. What it adds are the rules a planner cannot argue with.
+
+| Rule | What it does |
+|---|---|
+| **Step budget** | An explicit ceiling (`--max-steps`). Long horizons are where agents fail, so the limit is stated, not emergent |
+| **Halt on lost state** | `reconciliation_required` stops the run. When the runtime cannot say what the world looks like, it does not keep acting on it |
+| **Repeated denials** | The same forbidden request three times ends the run. A planner that keeps asking is stuck or being driven |
+| **Loop guard** | The same request failing again, or a new attempt dying of the same error, is flagged to the model as a warning from the runtime the second time and ends the run the third. Re-reading one page four times running ends it too |
+| **Goal splitting** | A long goal is broken into a few subtasks, each run with a fresh planner context that sees only what the earlier ones reported. `--no-split` turns it off |
+| **Context management** | Every request is fitted to the model's window *by token count* before it is sent. The system prompt and goal always stay, the newest steps stay while they fit, and what was dropped is named in one line. If the server still says the request is too long, it retries once at half the budget and then stops with a reason. The window is what Ollama actually serves, not what was asked for. Claude's history stays append-only (editing it would invalidate its thinking) and old tool results are cleared by the API |
+| **Resume** | `minos run --resume` continues an interrupted run in a fresh conversation primed with what it did. Scopes are never inherited from the old run: they are the flags you type now |
+
+### Memory
+
+Not conversation history: an index of **what the computer was doing**. Files in the
+workspace and their metadata, every action this runtime admitted and what it touched,
+what it opened and with which application, and edits made *outside* the run, seen by a
+watcher while it works.
+
+```console
+$ minos index data && minos recall "the spreadsheet"
+Resolved 'the spreadsheet' to:
+  data/sales_2025.csv
+
+Because:
+  - .csv matches the kind of file you named (spreadsheet)
+```
+
+The planner reaches it through `memory.recall` and `memory.recent`, scoped like any
+other read: memory never tells it about a file the task could not have listed anyway.
+**Memory content is untrusted** — it is indexed from your files, which an attacker can
+influence — so a resolution informs a plan and never widens a scope.
+
+### Security, in one table
+
+The premise is that the model is compromised. Each layer assumes the one before it
+failed:
+
+| Layer | What it stops |
+|---|---|
+| **Capability scopes** | Anything outside what you granted, matched on the resolved real path, so `..` and symlinks do not help. Fixed before the task; nothing the model reads can widen them |
+| **Effect classes + approval** | Irreversible effects never auto-run. You approve them, or a named policy does and the audit log says which |
+| **Checkpoint + verify** | A change that did not do what it declared is rolled back. One that touched undeclared files halts the run instead of claiming a clean rollback |
+| **Planner isolation** | The planner — the code that parses the model's output — runs in its own process that cannot write a file or start a program (low-integrity token and job object on Windows, Landlock on Linux, seatbelt on macOS). It can only send JSON, and every field is checked |
+| **Code sandbox, by origin** | Code your local model wrote runs kernel-confined; code from anywhere else runs in a container with no network, or not at all |
+| **GUI grants** | Input goes only to windows you named (`--gui-window`), only while they are in front; `Ctrl+Alt+Esc` aborts; the agent's own pointer shows where it is about to act |
+| **Hash-chained audit** | Every decision, in order, tamper-evident |
+
+What none of this stops, stated rather than discovered: a bug in the broker is a full
+bypass; the isolated planner can still read your files and reach the network; and a
+model that confidently asks for the *wrong* thing inside its scope gets it, which is
+what `--dry-run`, checkpoints and `minos undo` are for. All of it, with the per-platform
+detail: **[SECURITY.md](SECURITY.md)**.
+
 ---
 
 ## Getting started
@@ -219,12 +281,14 @@ and prints the exact scopes before doing anything.
 | | |
 |---|---|
 | `minos demo` | dry-run → execute → byte-identical rollback → a refused request |
-| `minos eval` | the 18-task suite with the honesty metrics |
+| `minos eval` | the 22-task suite with the honesty metrics (`--runs 3` for the spread) |
 | `minos doctor` | can this machine run fully offline? sized to your GPU |
 | `minos undo` | what can be put back, and put it back |
 | `minos audit` | verify the hash chain |
 | `minos index ./data` | build the memory index |
 | `minos recall "the excel from yesterday"` | resolve a vague reference, with reasons |
+| `minos sessions` | recorded runs, and which ones were interrupted |
+| `minos providers` | local and hosted model providers, and which keys are set |
 
 ### Running an agent
 
@@ -246,6 +310,17 @@ Scopes are flags, not configuration buried in a file:
 | `--allow-delete` | `fs.delete` |
 | `--allow-open` | `app.open` — launch files in their default application |
 | `--allow-gui` | `ui.input` — **your real mouse and keyboard**. `Ctrl+Alt+Esc` aborts |
+| `--allow-web` | `web.input` — act in web pages by their controls, in a browser minos owns (implied by `--allow-gui`) |
+
+**Websites** go through the web tier when Playwright is installed
+(`uv sync --extra web`). A page is read as a list of its controls —
+`e12 button "Start a post"` — and the planner clicks and fills by reference,
+never by coordinate. It uses your installed Chrome or Edge, with its own profile
+in `~/.minos/browser`: sign in to a site once in that window and it stays signed
+in. Clicks on commit controls (Post, Send, Delete...) still stop for you.
+
+Large goals are split into subtasks, a loop guard ends runs that go in circles, and
+`minos run --resume` picks up an interrupted one — see [the agent loop](#the-agent-loop).
 
 ### Fully local
 
@@ -311,10 +386,12 @@ invariants** checked on every task — properties that must hold whatever the ag
 did, which is the only way to evaluate a runtime whose capabilities are generated at
 runtime rather than enumerated.
 
-`qwen3:8b` scores **14–15 of 18** here, fully offline on an 8 GB laptop GPU, across
-two full runs, and 6/6 on refusal both times. Rerunning the tasks that moved shows a
-single run is worth about ±2 tasks, and one long-horizon task passes only 1 time in 5.
-The invariants held on every run.
+`qwen3:8b` scored **14–15 of 18** on the alpha suite, fully offline on an 8 GB laptop
+GPU, across two full runs, and 6/6 on refusal both times; a single run is worth about
+±2 tasks. On the current 22-task suite it is being scored three times with
+`--runs 3`, and the result goes in [EVALUATION.md](EVALUATION.md) with its spread.
+The invariants held on every run. The three GUI tasks run against a simulated desktop,
+so they measure the runtime's handling of GUI work, not a model's skill with real apps.
 
 Full method, the conditions that number was measured under, and what is *not*
 measured: **[EVALUATION.md](EVALUATION.md)**.
@@ -325,7 +402,7 @@ measured: **[EVALUATION.md](EVALUATION.md)**.
 
 ```bash
 uv sync --all-extras
-uv run pytest                      # 760 passing
+uv run pytest                      # 987 passing
 uv run ruff check src tests
 uv run ruff format --check src tests
 uv run mypy                        # strict

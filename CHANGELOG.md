@@ -10,6 +10,18 @@ All notable changes to minos are recorded here. The format follows
 
 ### Added
 
+- **A web tier.** With `--allow-web` (or `--allow-gui`), pages are read as a
+  list of their controls and acted on by reference in a browser minos owns, with
+  its own profile. Commit controls (Post, Send, Delete...) stop for approval.
+  Needs `uv sync --extra web`.
+- **A loop guard.** A request that fails again, or a new attempt that dies of the
+  same error, is flagged to the model as a warning from the runtime the second
+  time, and ends the run the third. The same request four times running ends it
+  too.
+- **Goal splitting.** A long goal is split into a few subtasks, each run with a
+  fresh planner context that sees only what earlier ones reported. `--no-split`
+  turns it off. The isolated planner forwards splitting across the process
+  boundary.
 - **`minos eval --runs N`** runs the suite N times and reports the spread: each
   run's score, the mean and standard deviation, the range, an approximate 95%
   interval, and every task that passed in some runs and failed in others.

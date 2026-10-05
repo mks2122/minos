@@ -286,3 +286,13 @@ def test_in_process_planner_turns_it_off():
 
     assert build_parser().parse_args(["run", "g"]).isolate_planner is True
     assert build_parser().parse_args(["run", "g", "--in-process-planner"]).isolate_planner is False
+
+
+def test_an_isolated_planner_still_splits_goals():
+    """The agent splits a goal only for a Decomposer; isolation must not hide that."""
+    from minos.planner.base import Decomposer
+
+    with IsolatedPlanner.of(ScriptedPlanner([]), timeout=60) as planner:
+        assert isinstance(planner, Decomposer)
+        # A scripted planner cannot split; the answer is "do not split", not an error.
+        assert planner.decompose("a goal", SCOPES) == []

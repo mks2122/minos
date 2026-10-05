@@ -1,6 +1,6 @@
 # Status
 
-Last updated 5 Oct 2026. **962 tests passing, 10 skipped. Reference eval 22/22, 0 invariant
+Last updated 5 Oct 2026. **987 tests passing, 10 skipped. Reference eval 22/22, 0 invariant
 violations. Ruff clean, mypy strict clean.**
 
 Written so nobody has to guess which parts are real.
@@ -16,14 +16,14 @@ Written so nobody has to guess which parts are real.
 | **Audit** | Append-only hash-chained JSONL, tamper-evident |
 | **Tier router** | L1 → L2 → L2.5 → L3 with recorded degradation and published fallback rate |
 | **L1** | Filesystem, process spawn, `app.open` (default handler), browser, asking the user, memory recall |
-| **L2** | Tabular: cell-level workbook operations. CSV built in, backends pluggable |
+| **L2** | Tabular: cell-level workbook operations. CSV built in, backends pluggable. **Web**: pages acted on by their controls in a browser minos owns (Playwright, `--allow-web`); commit controls stop for approval |
 | **L2.5** | **The sandbox**: `code.run` writes and runs Python in a kernel-confined workspace (Landlock+seccomp, a low-integrity token, or seatbelt), or a container when the code's origin is not trusted; `code.materialize` promotes one artifact through the broker as an ordinary checkpointed, verified `fs.write` |
 | **L3** | Click / type / key / screenshot. **Real on Windows** via `SendInput`, with `Ctrl+Alt+Esc` to abort; a simulated desktop for the eval suite on every platform |
 | **Grounding** | `ui.click` takes an element name and resolves it against the UI Automation tree (or a driver's own); ambiguity raises rather than guessing; invoking avoids moving the cursor |
 | **Planner** | Protocol, scripted, Claude (manual tool loop), and any OpenAI-compatible server: local (Ollama, LM Studio, llama.cpp, vLLM) or hosted (OpenRouter, OpenAI, Groq, Together, DeepSeek, Mistral, Fireworks, Gemini, xAI, Cerebras, or a custom URL) |
 | **Planner isolation** | The planner runs in its own process that cannot write files or start programs (low-integrity token and one-process job on Windows, Landlock on Linux, seatbelt on macOS). It talks to the runtime only through validated JSON lines |
 | **Offline** | `minos doctor` checks readiness; `--offline` refuses any model that is not on this machine |
-| **Agent loop** | Step budget, halt on `reconciliation_required`, abandon on repeated denial |
+| **Agent loop** | Step budget, halt on `reconciliation_required`, abandon on repeated denial. **Loop guard**: the same request failing again, or the same error from a new attempt, is flagged to the model the second time and ends the run the third; the same request four times running ends it too. **Goal splitting**: a long goal runs as a few subtasks, each with a fresh planner context (`--no-split` turns it off) |
 | **Context management** | Every request to an OpenAI-compatible model is fitted to a token budget before it is sent: system prompt and goal always kept, newest steps kept while they fit, the rest named in one line, an oversized latest result shrunk rather than dropped. Estimates are calibrated against the server's own count; a server overflow is retried once at half the budget; a request that cannot fit fails with a reason. The window is what Ollama really serves, or what a hosted provider reports. Claude stays append-only (thinking blocks forbid edits) and old tool results are cleared server-side |
 | **Session resume** | `minos run --resume` continues a recorded run in a fresh conversation primed with what it did. Scopes are never inherited |
 | **Eval** | 22 tasks, binary, seeded: 7 REFUSE, 4 long-horizon (up to 25 steps), 3 GUI. Regression detection, CI-enforced. `--runs N` reports the spread across runs |

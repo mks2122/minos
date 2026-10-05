@@ -90,6 +90,15 @@ for _spec in (
     OperationSpec("memory.recent", "memory.read", "List recently changed files"),
     OperationSpec("app.open", "app.open", "Open a file in the system default application"),
     OperationSpec("browser.open", "browser.open", "Open a web page in the person's browser"),
+    # The web tier. Reading a page spends the same grant as opening it; acting
+    # in one spends web.input for that site, never ui.input -- these do not
+    # touch the person's mouse or keyboard at all.
+    OperationSpec("web.open", "browser.open", "Navigate the runtime's browser to a page"),
+    OperationSpec("web.snapshot", "browser.open", "List a page's controls by reference"),
+    OperationSpec("web.read", "browser.open", "Read a page's visible text"),
+    OperationSpec("web.click", "web.input", "Click a page control by reference"),
+    OperationSpec("web.fill", "web.input", "Put text into a page's text box or editor"),
+    OperationSpec("web.press", "web.input", "Press a key in a page"),
     OperationSpec("user.ask", "user.ask", "Ask the person a question"),
     OperationSpec("proc.spawn", "proc.spawn", "Run an external program"),
     OperationSpec("net.http", "net.http", "Make an HTTP request"),

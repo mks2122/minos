@@ -136,6 +136,8 @@ class CodeAdapter:
         if not code or not str(code).strip():
             raise OperationUnsupported("code.run requires 'code'")
 
+        code, repaired = _unescaped(str(code))
+
         workspace = self.workspace
         materials = [str(m) for m in request.params.get("materials", [])]
         timeout = float(request.params.get("timeout", self.timeout))
@@ -162,6 +164,15 @@ class CodeAdapter:
                             f"({wanted.purpose}). Install it with: {wanted.install_hint}"
                         ),
                     )
+                elif "line continuation character" in result.stderr and "\\n" in str(code):
+                    result = replace(
+                        result,
+                        detail=(
+                            "your code contains the two characters \\n where it needs "
+                            "real line breaks. Send the script with actual newlines, "
+                            "not escaped ones."
+                        ),
+                    )
             return result
 
         return Preparation(
@@ -182,6 +193,12 @@ class CodeAdapter:
                     f"runs a script in the {self.sandbox.name} sandbox "
                     f"({self.describe_containment()}); its result is unverifiable "
                     "by construction and it reaches nothing outside the workspace"
+                    + (
+                        "; the code arrived with escaped newlines (\\n) and runs "
+                        "with them turned into line breaks"
+                        if repaired
+                        else ""
+                    )
                 ),
             ),
             execute=execute,
@@ -223,3 +240,29 @@ class CodeAdapter:
             execute=execute,
             grants=(Grant("fs.write", str(target)),),
         )
+
+
+def _unescaped(code: str) -> tuple[str, bool]:
+    """Undo a planner's double-escaping, only when that is unambiguously the fix.
+
+    Small models sometimes JSON-escape the script twice, so it arrives as one
+    line holding the two characters ``\\n`` where line breaks belong, and
+    Python rejects it. Turning every ``\\n`` into a newline would break a
+    correct one-liner like ``print("a\\nb")``, so the repair is used only when
+    the code as sent does not parse and the repaired code does. Parsing is
+    ``compile`` -- it runs nothing.
+    """
+    if "\\n" not in code or _parses(code):
+        return code, False
+    candidate = code.replace("\\r\\n", "\n").replace("\\n", "\n").replace("\\t", "\t")
+    return (candidate, True) if _parses(candidate) else (code, False)
+
+
+def _parses(code: str) -> bool:
+    try:
+        compile(code, "<planner>", "exec", dont_inherit=True)
+    except Exception:
+        # SyntaxError, or a pathological input exhausting the parser: either
+        # way, not code that parses.
+        return False
+    return True

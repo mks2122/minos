@@ -50,6 +50,7 @@ KNOWN_CAPABILITIES = frozenset(
         "memory.read",
         "app.open",
         "browser.open",
+        "web.input",
         "user.ask",
         "state.undo",
         "code.run",

@@ -118,7 +118,11 @@ def test_flagship_task_is_fully_audited(workspace):
 
 
 def test_step_budget_is_enforced(workspace):
-    planner = CallablePlanner(lambda g, o, s: req("fs.list", path=str(workspace)))
+    # Alternating, so it is the budget that stops this and not the loop guard,
+    # which ends a run of identical requests sooner.
+    planner = CallablePlanner(
+        lambda g, o, s: req("fs.stat" if len(o) % 2 else "fs.list", path=str(workspace))
+    )
     agent = build(workspace, planner)
     agent.limits = AgentLimits(max_steps=5)
 

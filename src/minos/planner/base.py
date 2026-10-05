@@ -14,12 +14,12 @@ omits.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Protocol
+from typing import Any, Protocol, runtime_checkable
 
 from ..scopes import ScopeSet
 from ..types import ActionRequest, Outcome
 
-__all__ = ["Done", "Observation", "Planner", "Step", "Trajectory"]
+__all__ = ["Decomposer", "Done", "Observation", "Planner", "Step", "Trajectory"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -47,6 +47,9 @@ class Observation:
     result: Any = None
     error: str = ""
     detail: str = ""
+    warning: str = ""
+    """Said by the runtime, not the world: the loop guard's notice that this
+    exact request has failed before. Trusted, unlike ``result``."""
 
     @classmethod
     def of(cls, outcome: Outcome) -> Observation:
@@ -108,4 +111,21 @@ class Planner(Protocol):
         scopes: ScopeSet,
     ) -> Step:
         """Decide the next step. Never executes anything."""
+        ...
+
+
+@runtime_checkable
+class Decomposer(Protocol):
+    """A planner that can split a large goal, and start each part afresh.
+
+    Optional. A planner without it runs every goal as one; the scripted ones
+    used by tests and skill replay are that kind.
+    """
+
+    def decompose(self, goal: str, scopes: ScopeSet) -> list[str]:
+        """Ordered subtasks. One item, or none, means the goal is not split."""
+        ...
+
+    def reset(self) -> None:
+        """Drop the conversation, so the next subtask is not crowded by the last."""
         ...

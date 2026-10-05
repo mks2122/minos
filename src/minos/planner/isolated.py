@@ -63,7 +63,7 @@ _PLANNERS = {
 """What the child may construct. The parent chooses, but the list is short on
 purpose: the child should never be a general-purpose object factory."""
 
-_CALLS = {"context_warning", "overhead_tokens"}
+_CALLS = {"context_warning", "overhead_tokens", "decompose"}
 _SETTABLE = {"context_window"}
 
 _OPERATION = re.compile(r"^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$")
@@ -274,6 +274,25 @@ class IsolatedPlanner:
         thinking = reply.get("thinking", "")
         self.last_thinking = thinking[:20_000] if isinstance(thinking, str) else ""
         return _decode_step(reply.get("step"))
+
+    def decompose(self, goal: str, scopes: ScopeSet) -> list[str]:
+        """Ask the child to split a goal. Untrusted like any reply: strings only.
+
+        Without this the proxy would not satisfy ``Decomposer``, and isolating
+        the planner would silently switch goal splitting off.
+        """
+        reply = self._ask(
+            {
+                "op": "call",
+                "name": "decompose",
+                "args": [goal, [str(scope) for scope in scopes]],
+            },
+            missing_ok=True,
+        )
+        value = reply.get("value")
+        if not isinstance(value, list) or not all(isinstance(v, str) for v in value):
+            return []
+        return [v[:2000] for v in value[:12]]
 
     def reset(self) -> None:
         self._ask({"op": "call", "name": "reset", "args": []}, missing_ok=True)
@@ -502,8 +521,11 @@ def _serve(stdin: IO[bytes], out: Callable[[dict[str, Any]], None]) -> None:
                 method = getattr(planner, name, None)
                 if name == "reset":
                     observations = []
+                args = list(message.get("args", []))
+                if name == "decompose" and len(args) == 2:
+                    args[1] = ScopeSet.parse(args[1])
                 if (name in _CALLS or name == "reset") and callable(method):
-                    out({"ok": True, "value": _jsonable(method(*message.get("args", [])))})
+                    out({"ok": True, "value": _jsonable(method(*args))})
                 else:
                     out({"ok": False, "missing": True, "error": f"{name} is not available"})
             elif op == "get" and message["name"] in _SETTABLE:

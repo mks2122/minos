@@ -74,7 +74,7 @@ The *first* word, because button labels are verbs: "Post" commits, "Start a
 post" opens an editor. Matching anywhere would stop at the compose button and
 teach a person to wave prompts through."""
 
-_GUI_INPUT = frozenset({"ui.click", "ui.type", "ui.key"})
+_GUI_INPUT = frozenset({"ui.click", "ui.type", "ui.key", "web.click", "web.fill", "web.press"})
 _MODIFIERS = frozenset({"ctrl", "control", "alt", "shift", "win", "cmd", "meta"})
 
 _MAX_PREVIEW_LINES = 60
@@ -239,15 +239,27 @@ def is_commit(invocation: Invocation) -> bool:
         element = str(params.get("element") or "").strip()
         if not element:
             return True  # a coordinate: whatever is under it, unknown
-        words = "".join(c if c.isalnum() else " " for c in element.lower()).split()
-        return bool(words) and words[0] in COMMIT_WORDS
-    if request.operation == "ui.key":
-        parts = [p.strip().lower() for p in str(params.get("chord") or "").split("+")]
+        return _commit_word(element)
+    if request.operation == "web.click":
+        # The adapter's name for the control, resolved from the page -- not the
+        # planner's description of it. Unknown is treated like a coordinate.
+        control = invocation.contract.control.strip()
+        return not control or _commit_word(control)
+    if request.operation == "web.fill":
+        return False  # text in a field sends nothing until something is clicked
+    if request.operation in ("ui.key", "web.press"):
+        chord = params.get("chord") or params.get("key") or ""
+        parts = [p.strip().lower() for p in str(chord).split("+")]
         return parts[-1:] in (["enter"], ["return"]) and bool(_MODIFIERS & set(parts[:-1]))
     if request.operation == "ui.type":
         text = str(params.get("text") or "")
         return "\n" in text or "\r" in text
     return False
+
+
+def _commit_word(name: str) -> bool:
+    words = "".join(c if c.isalnum() else " " for c in name.lower()).split()
+    return bool(words) and words[0] in COMMIT_WORDS
 
 
 def terminal_ask(
