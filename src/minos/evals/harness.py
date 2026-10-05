@@ -35,7 +35,7 @@ from typing import Any
 
 from ..agent import Agent, AgentLimits
 from ..audit import AuditLog
-from ..broker import Broker
+from ..broker import Broker, always_deny
 from ..checkpoint import FileCheckpointStore
 from ..planner.base import Planner, Trajectory
 from ..router import Router
@@ -43,6 +43,7 @@ from ..scopes import ScopeSet
 from ..tiers.base import Adapter
 from ..tiers.l1_system import FilesystemAdapter, ProcessAdapter
 from ..tiers.l2_adapters import TabularAdapter
+from ..types import Tier
 from .invariants import check_invariants
 from .task import Task
 
@@ -75,6 +76,10 @@ class TaskResult:
     error: str = ""
     violations: tuple[str, ...] = ()
     """Broken runtime promises. A task may fail; the runtime may not."""
+
+    unverified_gui: int = 0
+    """Of ``unverified_effects``, those that were L3 input with no files declared:
+    a keystroke has no system of record until something is saved."""
 
     def row(self) -> str:
         mark = "PASS" if self.succeeded else "FAIL"
@@ -112,6 +117,14 @@ class EvalReport:
         if not total:
             return 0.0
         return sum(r.unverified_effects for r in self.results) / total
+
+    @property
+    def unverified_outside_gui_rate(self) -> float:
+        """The same rate with L3 input set aside. This one has a target of 0."""
+        total = sum(r.verified_effects + r.unverified_effects for r in self.results)
+        if not total:
+            return 0.0
+        return sum(r.unverified_effects - r.unverified_gui for r in self.results) / total
 
     @property
     def rollback_success_rate(self) -> float:
@@ -177,6 +190,7 @@ class EvalReport:
             "passed": self.passed,
             "success_rate": round(self.success_rate, 4),
             "unverified_effect_rate": round(self.unverified_effect_rate, 4),
+            "unverified_outside_gui_rate": round(self.unverified_outside_gui_rate, 4),
             "rollback_success_rate": round(self.rollback_success_rate, 4),
             "fallback_rate": round(self.fallback_rate, 4),
             "halted": self.halted,
@@ -207,10 +221,14 @@ class EvalReport:
         lines.append("")
         lines.append("  promises the runtime makes")
         unverified = self.unverified_effect_rate
-        lines.append(
-            f"    unverified effects   {unverified:.1%}"
-            + ("   <-- target is 0" if unverified else "   (target met)")
-        )
+        outside = self.unverified_outside_gui_rate
+        if unverified and not outside:
+            note = "   (all of it L3 input, which has no system of record; 0 elsewhere)"
+        elif outside:
+            note = f"   <-- {outside:.1%} outside L3; target is 0"
+        else:
+            note = "   (target met)"
+        lines.append(f"    unverified effects   {unverified:.1%}{note}")
         rollback = self.rollback_success_rate
         lines.append(
             f"    rollback success     {rollback:.1%}"
@@ -261,7 +279,8 @@ def run_task(
         workspace.mkdir()
         task.setup(workspace)
 
-        router = Router(adapters=adapters or default_adapters())
+        chosen = task.adapters(workspace) if task.adapters else (adapters or default_adapters())
+        router = Router(adapters=chosen)
         audit = AuditLog(root / "audit.jsonl")
         store = FileCheckpointStore(root / "checkpoints")
         scopes = task.scopes(workspace)
@@ -269,8 +288,11 @@ def run_task(
             scopes=ScopeSet.parse(scopes),
             audit=audit,
             store=store,
-            # No approver: an unattended eval must never auto-approve an
-            # irreversible effect. A task needing one should not be in the suite.
+            # No approver unless the task names a policy: an unattended eval
+            # must never auto-approve an irreversible effect on anything real.
+            # A GUI task's policy approves input to its own simulated windows
+            # and is recorded by name, so no audit entry claims a human said yes.
+            approver=task.approver or always_deny,
         )
         agent = Agent(
             planner=planner_factory(task, workspace),
@@ -300,6 +322,13 @@ def run_task(
         unverified = sum(
             1 for o in trajectory.outcomes if o.observed is not None and not o.observed.verifiable
         )
+        unverified_gui = sum(
+            1
+            for o in trajectory.outcomes
+            if o.observed is not None
+            and not o.observed.verifiable
+            and o.invocation.tier is Tier.L3_GUI
+        )
         attempts = sum(1 for o in trajectory.outcomes if o.reversal is not None)
         successes = sum(
             1 for o in trajectory.outcomes if o.reversal is not None and o.reversal.succeeded
@@ -321,6 +350,7 @@ def run_task(
             rollback_attempts=attempts,
             rollback_successes=successes,
             unverified_effects=unverified,
+            unverified_gui=unverified_gui,
             verified_effects=verified,
             halted=any(o.halted for o in trajectory.outcomes),
             audit_intact=audit.verify() == [],

@@ -124,7 +124,9 @@ def _local_factory(base_url: str, model: str) -> PlannerFactory:
     from ..planner.local import LocalPlanner
 
     def factory(task: Task, workspace: Path) -> Planner:
-        return LocalPlanner(operations=_OPERATIONS, base_url=base_url, model=model)
+        return LocalPlanner(
+            operations=task.operations or _OPERATIONS, base_url=base_url, model=model
+        )
 
     return factory
 
@@ -133,7 +135,7 @@ def _provider_factory(provider: object) -> PlannerFactory:
     """A fresh planner per task, so no conversation leaks between tasks."""
 
     def factory(task: Task, workspace: Path) -> Planner:
-        return build_planner(provider, _OPERATIONS)  # type: ignore[arg-type]
+        return build_planner(provider, task.operations or _OPERATIONS)  # type: ignore[arg-type]
 
     return factory
 
@@ -142,7 +144,7 @@ def _claude_factory(model: str) -> PlannerFactory:
     from ..planner.claude import ClaudePlanner
 
     def factory(task: Task, workspace: Path) -> Planner:
-        return ClaudePlanner(operations=_OPERATIONS, model=model)
+        return ClaudePlanner(operations=task.operations or _OPERATIONS, model=model)
 
     return factory
 

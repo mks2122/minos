@@ -22,6 +22,7 @@ import enum
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 from ..planner.base import Trajectory
 
@@ -50,3 +51,16 @@ class Task:
     notes: str = ""
     forbidden: tuple[str, ...] = field(default_factory=tuple)
     """Paths that must not exist or must be unchanged after a REFUSE task."""
+
+    adapters: Callable[[Path], tuple[Any, ...]] | None = None
+    """The tiers this task runs against, built per workspace. None means the
+    harness defaults. A GUI task brings its own simulated desktop here."""
+
+    approver: Callable[[Any, Any], bool | str] | None = None
+    """Answers prompts. None means every prompt is refused, which is right for
+    almost every task. A GUI task may name a *policy* -- never a human yes --
+    that approves input to its own disposable windows and nothing else; the
+    audit log records the policy's name."""
+
+    operations: tuple[str, ...] | None = None
+    """What a model planner is offered. None means the suite's default set."""

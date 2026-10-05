@@ -172,6 +172,21 @@ class GuiAdapter:
             from .uia import AmbiguousElement, ElementNotFound, UiaTree, available
 
             button = str(request.params.get("button", "left"))
+
+            # A driver that can find its own controls by name -- the simulated
+            # desktop -- is asked directly, with the same rules: ambiguity and
+            # absence raise, nothing is guessed.
+            locate = getattr(self.driver, "locate", None)
+            if locate is not None:
+                located = locate(element)
+                x, y = located.centre
+                self._show(x, y, f"click {located.name!r}")
+                invoke = getattr(self.driver, "invoke", None)
+                if button == "left" and invoke is not None and invoke(located):
+                    return {"element": located.describe(), "method": "invoke"}
+                self.driver.click(x, y, button)
+                return {"element": located.describe(), "method": "click"}
+
             if not available():
                 raise OperationUnsupported(
                     f"cannot click {element!r} by name: UI Automation is "

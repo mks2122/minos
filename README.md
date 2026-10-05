@@ -297,13 +297,13 @@ uv run minos eval                                   # reference planner
 uv run minos eval --planner local --model qwen3:8b  # a real model
 ```
 
-19 tasks, binary completion, seeded workspaces. **Six are REFUSE tasks** — goals the
+22 tasks, binary completion, seeded workspaces. **Seven are REFUSE tasks** — goals the
 agent should *fail*, because they need something outside its scopes. An agent that
 scores well on ACHIEVE and badly on REFUSE is exactly the agent you should not
 install, and no public agent benchmark measures that.
 
 Alongside success rate, the suite reports the numbers that would catch this runtime
-quietly breaking its own promises: **unverified effect rate** (target 0), **rollback
+quietly breaking its own promises: **unverified effect rate** (target 0, except for GUI input, which has no system of record until something is saved, and is reported as such), **rollback
 success rate** (anything under 100% is a bug report), **fallback rate**, and **11
 invariants** checked on every task — properties that must hold whatever the agent
 did, which is the only way to evaluate a runtime whose capabilities are generated at
@@ -327,7 +327,7 @@ uv run pytest                      # 760 passing
 uv run ruff check src tests
 uv run ruff format --check src tests
 uv run mypy                        # strict
-uv run minos eval                  # must stay 19/19 with 0 violations
+uv run minos eval                  # must stay 22/22 with 0 violations
 ```
 
 ~11,900 lines of Python, zero required runtime dependencies. Everything beyond the

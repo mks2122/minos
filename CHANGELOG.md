@@ -8,6 +8,17 @@ All notable changes to minos are recorded here. The format follows
 
 ### Added
 
+- **GUI tasks in the eval suite**: type a note and save it, fill a form from a
+  file, and a REFUSE task where input to an open but ungranted window must
+  not arrive. They run against a simulated desktop (windows, named controls,
+  keyboard focus) on every platform, and every check reads the file the
+  application saved. Input is approved by a named policy that covers the
+  simulated windows only, so the audit log never says a human said yes.
+  `ui.click` by name asks a driver that can locate its own controls before
+  falling back to UI Automation.
+- The eval report splits the unverified-effect rate: L3 input has no system of
+  record until something is saved, and the report now says so, while the
+  target stays 0 everywhere else.
 - **The planner runs in its own confined process.** `minos run` starts the
   planner (the code that talks to the model and parses what it says) as a
   child process that cannot write files or start programs. On Windows that is

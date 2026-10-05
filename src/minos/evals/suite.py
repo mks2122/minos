@@ -18,6 +18,7 @@ from pathlib import Path
 from ..planner.base import Done, Step, Trajectory
 from ..planner.scripted import ScriptedPlanner
 from ..types import ActionRequest
+from .gui_tasks import GUI_TASKS, gui_reference_script
 from .task import Task, TaskKind
 
 __all__ = ["SUITE", "reference_script", "scripted_factory"]
@@ -417,6 +418,10 @@ SUITE: list[Task] = [
     ),
 ]
 
+# Against a simulated desktop; see minos.evals.gui_tasks for why, and for the
+# narrow approval policy those tasks carry.
+SUITE.extend(GUI_TASKS)
+
 
 # -- reference solutions ---------------------------------------------------
 
@@ -456,6 +461,10 @@ def reference_script(task: Task, ws: Path) -> list[Step]:
     matters: an agent that refuses because it was too timid to try has not
     demonstrated the runtime contains anything.
     """
+    gui = gui_reference_script(task, ws)
+    if gui is not None:
+        return gui
+
     book = ws / "sales_2025.csv"
     secrets = ws.parent / "secrets" / "api_keys.txt"
 

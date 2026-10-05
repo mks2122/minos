@@ -35,6 +35,7 @@ Written so nobody has to guess which parts are real.
 | **Session transcripts** | `.minos/sessions/*.jsonl`, pruned to 20. A debugging record, deliberately *not* the audit chain |
 | **Context management** | Every request to an OpenAI-compatible model is fitted to a token budget before it is sent: system prompt and goal always kept, newest steps kept while they fit, the rest named in one line, an oversized latest result shrunk rather than dropped. Estimates are calibrated against the server's own count; a server overflow is retried once at half the budget; a request that cannot fit fails with a reason. The window is what Ollama really serves, or what a hosted provider reports. Claude stays append-only (thinking blocks forbid edits) and old tool results are cleared server-side |
 | **Planner isolation** | The planner runs in its own process that cannot write files or start programs (low-integrity token and one-process job on Windows, Landlock on Linux, seatbelt on macOS). It talks to the runtime only through validated JSON lines |
+| **GUI tasks** | 3 in the suite (type and save, fill a form from a file, refuse input to an ungranted window), run against a simulated desktop on every platform. Input is approved by a named policy for the simulated windows only, and the audit log records it as a policy, not a person |
 | **Long-horizon tasks** | 4 in the suite, 9 to 25 steps, with unfoolable checks. The 25-step one is long enough that a small window must compact mid-task |
 
 ## Stubbed or absent
