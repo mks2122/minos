@@ -124,7 +124,13 @@ def landlock_abi() -> int:
     return int(version) if version and version > 0 else 0
 
 
-def _landlock(read_write: list[str], read_only: list[str], report: Applied) -> None:
+def _landlock(
+    read_write: list[str],
+    read_only: list[str],
+    report: Applied,
+    *,
+    restrict_network: bool = True,
+) -> None:
     """Confine this process to a path allow-list, for the rest of its life.
 
     Everything outside the two lists stops existing: not unreadable, *absent*.
@@ -146,7 +152,9 @@ def _landlock(read_write: list[str], read_only: list[str], report: Applied) -> N
         handled_fs |= _FS_TRUNCATE
     if abi >= 5:
         handled_fs |= _FS_IOCTL_DEV
-    handled_net = (_NET_BIND_TCP | _NET_CONNECT_TCP) if abi >= 4 else 0
+    # The planner process needs the network to reach its model and nothing
+    # else, so it asks for the filesystem rules alone.
+    handled_net = (_NET_BIND_TCP | _NET_CONNECT_TCP) if abi >= 4 and restrict_network else 0
 
     class RulesetAttr(ctypes.Structure):
         _fields_ = [("handled_access_fs", ctypes.c_uint64), ("handled_access_net", ctypes.c_uint64)]

@@ -57,6 +57,9 @@ DEFAULTS: dict[str, str] = {
     "MINOS_CONTEXT_TOKENS": "6144",
     "MINOS_PLANNER_TIMEOUT": "600",
     "MINOS_THINKING": "1",
+    # The planner runs in a child process that cannot write files or start
+    # programs; only the broker's process can act. 0 keeps it in-process.
+    "MINOS_ISOLATE_PLANNER": "1",
 }
 """Every knob, with the value you get if you set nothing.
 
@@ -127,6 +130,7 @@ class Settings:
     context_tokens: int
     planner_timeout: float
     thinking: bool
+    isolate_planner: bool
     source: dict[str, str] = field(default_factory=dict, repr=False)
     """Where each value came from, for `minos doctor`. Names only, no values."""
 
@@ -220,5 +224,6 @@ def settings(dotenv: Path | str | None = ".env") -> Settings:
         context_tokens=int(_as_float(values["MINOS_CONTEXT_TOKENS"], 6144)),
         planner_timeout=_as_float(values["MINOS_PLANNER_TIMEOUT"], 600.0),
         thinking=_as_bool(values["MINOS_THINKING"]),
+        isolate_planner=_as_bool(values["MINOS_ISOLATE_PLANNER"]),
         source=source,
     )

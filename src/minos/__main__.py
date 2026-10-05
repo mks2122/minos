@@ -230,11 +230,15 @@ def execute_run(
     if args.watch:
         watcher.start()
 
+    isolated: list[Any] = []
+
     def release() -> None:
         # A one-shot CLI could leave these to process exit. A conversation runs
         # many goals in one process, and a leaked watcher keeps scanning.
         watcher.stop()
         memory.close()
+        for child in isolated:
+            child.close()
 
     if planner is None:
         try:
@@ -243,6 +247,20 @@ def execute_run(
             print(f"error: {exc}", file=sys.stderr)
             release()
             return RunReport(code=2)
+        if getattr(args, "isolate_planner", False):
+            try:
+                planner = _isolate(planner)
+            except Exception as exc:
+                # Refusing to run is the safe failure: the person asked for an
+                # isolated planner, and an in-process one is not a substitute.
+                print(f"error: could not start the planner process: {exc}", file=sys.stderr)
+                print("       --in-process-planner runs it unisolated.", file=sys.stderr)
+                release()
+                return RunReport(code=2)
+            describe = getattr(planner, "describe", None)
+            if describe is not None:
+                isolated.append(planner)
+                print(f"isolation : planner {describe()}")
     code_origin = _code_origin(args)
 
     gui_adapters: tuple[Adapter, ...] = ()
@@ -415,6 +433,9 @@ def execute_run(
         # A quiet watcher is indistinguishable from one that found nothing.
         print(f"  watcher: {problem}", file=sys.stderr)
 
+    for child in isolated:
+        child.close()
+
     missing: list[Grant] = []
     for outcome in trajectory.outcomes:
         if outcome.status == "denied":
@@ -457,6 +478,23 @@ def _code_origin(args: argparse.Namespace) -> str:
     if cfg.source.get("MINOS_SANDBOX_ORIGIN") == "environment":
         return cfg.sandbox_origin
     return "remote-planner" if getattr(args, "planner_hosted", False) else cfg.sandbox_origin
+
+
+def _isolate(planner: Any) -> Any:
+    """Move a model planner into its own confined process.
+
+    Only the planners that talk to a model are moved: they are the ones that
+    parse untrusted output with third-party code. Anything else -- a scripted
+    planner in a test -- stays where it is.
+    """
+    from .planner.claude import ClaudePlanner
+    from .planner.isolated import IsolatedPlanner
+    from .planner.local import LocalPlanner
+
+    if not isinstance(planner, LocalPlanner | ClaudePlanner):
+        return planner
+    timeout = float(getattr(planner, "timeout", 600.0)) + 120.0
+    return IsolatedPlanner.of(planner, timeout=timeout)
 
 
 def _context_warning(planner: Any, base_url: str) -> str:
@@ -984,6 +1022,16 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         default=cfg.sandbox_allow_downgrade,
         help="let untrusted code run without a container when none is available",
+    )
+    run.add_argument(
+        "--in-process-planner",
+        dest="isolate_planner",
+        action="store_false",
+        default=cfg.isolate_planner,
+        help=(
+            "run the planner inside this process instead of a confined child that "
+            "cannot write files or start programs (MINOS_ISOLATE_PLANNER)"
+        ),
     )
     run.add_argument("--state", default=cfg.state)
     run.add_argument(

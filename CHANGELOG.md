@@ -8,6 +8,16 @@ All notable changes to minos are recorded here. The format follows
 
 ### Added
 
+- **The planner runs in its own confined process.** `minos run` starts the
+  planner (the code that talks to the model and parses what it says) as a
+  child process that cannot write files or start programs. On Windows that is
+  a low-integrity token and a one-process Job Object; on Linux, Landlock with
+  the whole filesystem read-only; on macOS, a seatbelt profile. The child can
+  reach the network, which it needs for its model, and nothing it sends is
+  trusted. Replies are size-capped JSON, checked field by field, and every
+  action still goes through the broker. `--in-process-planner` or
+  `MINOS_ISOLATE_PLANNER=0` turns it off. `minos doctor` reports which
+  confinement applies.
 - **`minos run --resume [SESSION]`** continues a recorded run that was
   interrupted, crashed or ended early. It starts a fresh conversation primed
   with what the earlier run did, step by step, rather than replaying the old

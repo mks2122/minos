@@ -21,6 +21,7 @@ That is a narrower claim than "secure", and it is deliberately narrower.
 | Component | Trust | Why |
 |---|---|---|
 | Planner (the model) | ❌ **Untrusted** | Assume injected |
+| Planner *process* | ❌ **Untrusted, confined** | Parses model output with third-party code; runs apart from the broker and cannot write files or start programs |
 | Tool output | ❌ **Untrusted** | It's data. File contents can contain instructions |
 | Memory contents | ❌ **Untrusted** | Indexed from files, therefore attacker-influenced |
 | Skill *bodies* | ❌ **Untrusted** | Induced from trajectories the planner shaped |
@@ -47,6 +48,43 @@ That is defensible only because of invariant I1 — the planner has no filesyste
 But the consequence is real and stated here rather than discovered later. The kernel confinement described below is defence-in-depth for the code tier only. It is **not** the foundation, and it does not stand behind the broker for anything else.
 
 ---
+
+## The planner runs in its own process
+
+The planner is the part that talks to the model and parses what it says back,
+using code this project did not write (an HTTP stack, an SDK, a JSON parser fed
+attacker-influenced text). Until beta it ran inside the broker's process, so a
+bug anywhere on that path ran with everything the broker can do.
+
+Now it is a child process, started by `minos run` unless `--in-process-planner`
+or `MINOS_ISOLATE_PLANNER=0` says otherwise, and it talks to the runtime only
+through a pipe of JSON lines:
+
+| Platform | Confinement of the planner process |
+|---|---|
+| **Windows** | Low-integrity token: it cannot write anything the user owns. Job Object allowing one process: it cannot start a program |
+| **Linux** | Landlock, applied by the child to itself before its first message: the whole filesystem is read-only to it |
+| **macOS** | seatbelt profile: no file writes, no `fork`. **Untested by the maintainer** (no Mac) |
+| anything else | a separate process and nothing more, and `doctor` says so |
+
+The trusted side never unpickles, evaluates or imports anything the child
+sends. Each reply is one size-capped JSON line, decoded field by field into an
+action request or a finish, and refused whole if any field is the wrong shape.
+Every action it asks for still goes through the broker like any other.
+
+**What this does not change, stated plainly:**
+
+- **A bug in the broker is still a full bypass.** This moves the planner out of
+  the broker's process; it does not put a second check behind the broker.
+- **The planner process can read what you can, and it has the network.** It needs
+  the network to reach its model, and Windows' integrity levels and the Landlock
+  rules here confine writes, not reads. A compromised planner process could
+  read a file and send it to wherever it can connect. Closing that needs a
+  network allow-list for the child, which is not done.
+- **A planner that is merely *wrong* is unaffected.** Isolation stops a planner
+  from acting outside the broker. It does nothing about a planner that asks
+  the broker for the wrong thing, which is what scopes, dry runs and
+  checkpoints are for.
 
 ## What each mechanism does and does not do
 
@@ -247,7 +285,7 @@ Every checkpoint is an unencrypted copy of the file it protects, kept in
 default). It is `chmod 0700` on POSIX and inherits directory ACLs on Windows.
 Anyone who can read that directory can read every file the agent has touched.
 
-## Known limitations in the current alpha
+## Known limitations
 
 - Kernel confinement covers `code.run` only; the broker's other operations have none
 - Windows confines sandbox *writes* but not *reads*; an AppContainer would close that
@@ -255,6 +293,7 @@ Anyone who can read that directory can read every file the agent has touched.
 - The container backend is not exercised by CI, which has no engine available
 - No network capability enforcement — `net.http` scopes parse and match, but nothing consumes them yet
 - No process sandboxing for `proc.spawn`
+- The isolated planner process can read the user's files and reach the network; only writes and process creation are refused
 - `NullOracle` means some effects are recorded as unverified; the rate is published rather than hidden
 - Audit log is not anchored externally
 

@@ -20,6 +20,11 @@ over, and the filesystem allow-list in the child covers ordinary reads.
 The child is created **suspended**, assigned to the job, and only then resumed,
 so there is no window in which it runs unconstrained.
 
+Two shapes of child use the same launch. :func:`spawn_confined` runs a script
+to completion with its output in files. :class:`ConfinedProcess` keeps a child
+alive and talks to it over pipes -- the isolated planner, which must answer many
+questions over one run.
+
 Everything here degrades rather than raises: if the token cannot be lowered the
 caller is told, and it decides whether an unconfined run is acceptable. A
 security control that disappears without saying so is the failure mode this
@@ -30,12 +35,14 @@ from __future__ import annotations
 
 import contextlib
 import ctypes
+import functools
 import os
 import subprocess
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from types import SimpleNamespace
+from typing import IO, Any
 
 from .confine import ConfinementNotApplied
 
@@ -44,7 +51,13 @@ from .confine import ConfinementNotApplied
 _WinDLL: Any = getattr(ctypes, "WinDLL", None)
 _last_error: Callable[[], int] = getattr(ctypes, "get_last_error", lambda: 0)
 
-__all__ = ["SpawnOutcome", "label_low_integrity", "spawn_confined", "supported"]
+__all__ = [
+    "ConfinedProcess",
+    "SpawnOutcome",
+    "label_low_integrity",
+    "spawn_confined",
+    "supported",
+]
 
 # -- Win32 constants ---------------------------------------------------------
 
@@ -77,6 +90,7 @@ _JOB_LIMIT_KILL_ON_JOB_CLOSE = 0x00002000
 _JOB_LIMIT_PROCESS_MEMORY = 0x00000100
 _JOB_LIMIT_JOB_MEMORY = 0x00000200
 
+_WAIT_OBJECT_0 = 0x00000000
 _WAIT_TIMEOUT = 0x00000102
 _INFINITE = 0xFFFFFFFF
 _ERROR_PRIVILEGE_NOT_HELD = 1314
@@ -122,25 +136,12 @@ def label_low_integrity(path: Path) -> bool:
     return completed.returncode == 0
 
 
-def spawn_confined(
-    argv: list[str],
-    *,
-    cwd: Path,
-    env: dict[str, str],
-    timeout: float,
-    max_memory_bytes: int = 0,
-    max_processes: int = 32,
-    low_integrity: bool = True,
-    output_dir: Path | None = None,
-    require: bool = False,
-) -> SpawnOutcome:
-    """Run ``argv`` inside a Job Object, at Low integrity where possible.
+# -- the Win32 surface, built once -------------------------------------------
 
-    Output goes to files rather than pipes. Pipes would need two reader threads
-    to avoid the classic fill-the-buffer deadlock, and files cost nothing here:
-    the run is already bounded by a timeout, and the caller already truncates.
-    """
-    import ctypes
+
+@functools.lru_cache(maxsize=1)
+def _api() -> SimpleNamespace:
+    """Libraries, structures and prototypes, declared once per process."""
     from ctypes import wintypes
 
     kernel32 = _WinDLL("kernel32", use_last_error=True)
@@ -225,22 +226,6 @@ def spawn_confined(
     class TOKEN_MANDATORY_LABEL(ctypes.Structure):
         _fields_ = [("Label", SID_AND_ATTRIBUTES)]
 
-    notes: list[str] = []
-    handles: list[int] = []
-
-    def close(handle: int | None) -> None:
-        if handle:
-            kernel32.CloseHandle(wintypes.HANDLE(handle))
-
-    output_dir = Path(output_dir or cwd)
-    out_path = output_dir / "_minos_stdout.txt"
-    err_path = output_dir / "_minos_stderr.txt"
-
-    inheritable = SECURITY_ATTRIBUTES()
-    inheritable.nLength = ctypes.sizeof(SECURITY_ATTRIBUTES)
-    inheritable.lpSecurityDescriptor = None
-    inheritable.bInheritHandle = True
-
     # Prototypes, and they are not optional. Without them ctypes passes every
     # argument as a C int: GetCurrentProcess() returns the pseudo-handle -1,
     # which becomes 0x00000000FFFFFFFF in a 64-bit register instead of
@@ -282,47 +267,67 @@ def spawn_confined(
     advapi32.GetLengthSid.restype = wintypes.DWORD
     advapi32.GetLengthSid.argtypes = [wintypes.LPVOID]
 
-    def open_for_write(path: Path) -> int:
-        handle = kernel32.CreateFileW(
-            str(path),
-            _GENERIC_WRITE,
-            _FILE_SHARE_READ | _FILE_SHARE_WRITE,
-            ctypes.byref(inheritable),
-            _CREATE_ALWAYS,
-            0,
-            None,
-        )
-        if handle == wintypes.HANDLE(-1).value:
-            raise OSError(_last_error(), f"cannot create {path}")
-        return int(handle)
+    return SimpleNamespace(
+        wintypes=wintypes,
+        kernel32=kernel32,
+        advapi32=advapi32,
+        STARTUPINFOW=STARTUPINFOW,
+        PROCESS_INFORMATION=PROCESS_INFORMATION,
+        SECURITY_ATTRIBUTES=SECURITY_ATTRIBUTES,
+        JOBOBJECT_EXTENDED_LIMIT_INFORMATION=JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
+        TOKEN_MANDATORY_LABEL=TOKEN_MANDATORY_LABEL,
+    )
 
-    stdout_handle = stderr_handle = stdin_handle = 0
-    job = 0
-    token = duplicate = 0
-    process = thread = 0
-    integrity_lowered = False
-    job_applied = False
+
+@dataclass
+class _Launched:
+    """A started, resumed child and what confinement actually held."""
+
+    process: int
+    thread: int
+    job: int
+    pid: int
+    integrity_lowered: bool
+    job_applied: bool
+    notes: list[str] = field(default_factory=list)
+
+
+def _close(handle: int | None) -> None:
+    if handle:
+        api = _api()
+        api.kernel32.CloseHandle(api.wintypes.HANDLE(handle))
+
+
+def _launch(
+    argv: list[str],
+    *,
+    cwd: Path,
+    env: dict[str, str],
+    stdin: int,
+    stdout: int,
+    stderr: int,
+    max_memory_bytes: int,
+    max_processes: int,
+    low_integrity: bool,
+    require: bool,
+) -> _Launched:
+    """Create the job and the lowered token, start the child suspended, resume it.
+
+    The three standard handles must already be inheritable. The caller owns the
+    returned process, thread and job handles; closing the job kills the tree.
+    """
+    api = _api()
+    kernel32, advapi32, wintypes = api.kernel32, api.advapi32, api.wintypes
+
+    notes: list[str] = []
+    job = token = duplicate = 0
+    integrity_lowered = job_applied = False
 
     try:
-        stdout_handle = open_for_write(out_path)
-        stderr_handle = open_for_write(err_path)
-        handles += [stdout_handle, stderr_handle]
-        stdin_handle = kernel32.CreateFileW(
-            "NUL",
-            _GENERIC_READ,
-            _FILE_SHARE_READ,
-            ctypes.byref(inheritable),
-            _OPEN_EXISTING,
-            0,
-            None,
-        )
-        handles.append(stdin_handle)
-
         # -- the job object --------------------------------------------------
-        job = kernel32.CreateJobObjectW(None, None)
+        job = int(kernel32.CreateJobObjectW(None, None) or 0)
         if job:
-            handles.append(job)
-            limits = JOBOBJECT_EXTENDED_LIMIT_INFORMATION()
+            limits = api.JOBOBJECT_EXTENDED_LIMIT_INFORMATION()
             flags = _JOB_LIMIT_KILL_ON_JOB_CLOSE | _JOB_LIMIT_ACTIVE_PROCESS
             limits.BasicLimitInformation.ActiveProcessLimit = max_processes
             if max_memory_bytes > 0:
@@ -357,7 +362,6 @@ def spawn_confined(
                 kernel32.GetCurrentProcess(), wanted, ctypes.byref(current)
             ):
                 token = current.value or 0
-                handles.append(token)
                 dup = wintypes.HANDLE()
                 if advapi32.DuplicateTokenEx(
                     wintypes.HANDLE(token),
@@ -368,10 +372,9 @@ def spawn_confined(
                     ctypes.byref(dup),
                 ):
                     duplicate = dup.value or 0
-                    handles.append(duplicate)
                     sid = wintypes.LPVOID()
                     if advapi32.ConvertStringSidToSidW(_LOW_INTEGRITY_SID, ctypes.byref(sid)):
-                        label = TOKEN_MANDATORY_LABEL()
+                        label = api.TOKEN_MANDATORY_LABEL()
                         label.Label.Sid = sid
                         label.Label.Attributes = _SE_GROUP_INTEGRITY
                         size = ctypes.sizeof(label) + advapi32.GetLengthSid(sid)
@@ -393,17 +396,17 @@ def spawn_confined(
                 notes.append(f"process token not available (error {_last_error()})")
 
         # -- the process -----------------------------------------------------
-        startup = STARTUPINFOW()
-        startup.cb = ctypes.sizeof(STARTUPINFOW)
+        startup = api.STARTUPINFOW()
+        startup.cb = ctypes.sizeof(api.STARTUPINFOW)
         startup.dwFlags = _STARTF_USESTDHANDLES
-        startup.hStdInput = stdin_handle
-        startup.hStdOutput = stdout_handle
-        startup.hStdError = stderr_handle
+        startup.hStdInput = stdin
+        startup.hStdOutput = stdout
+        startup.hStdError = stderr
 
         block = "".join(f"{name}={value}\0" for name, value in env.items()) + "\0"
         environment = ctypes.create_unicode_buffer(block)
         command = subprocess.list2cmdline(argv)
-        info = PROCESS_INFORMATION()
+        info = api.PROCESS_INFORMATION()
         creation = _CREATE_SUSPENDED | _CREATE_NO_WINDOW | _CREATE_UNICODE_ENVIRONMENT
 
         created = False
@@ -452,7 +455,7 @@ def spawn_confined(
         if not created:
             raise OSError(_last_error(), f"cannot start {argv[0]}")
 
-        process, thread = info.hProcess, info.hThread
+        process, thread = int(info.hProcess or 0), int(info.hThread or 0)
 
         # Suspended until now, so there is no instant in which the child runs
         # outside the job. This is the race that assigning after spawn has.
@@ -463,40 +466,137 @@ def spawn_confined(
             notes.append(f"job assignment refused (error {_last_error()})")
 
         if require and not (integrity_lowered and job_applied):
-            # Still suspended: not one instruction of the script has run. A run
+            # Still suspended: not one instruction of the child has run. A run
             # that demanded the kernel boundary must not quietly get the
             # in-process one instead, so it does not run at all.
             kernel32.TerminateProcess(wintypes.HANDLE(process), 1)
             kernel32.WaitForSingleObject(wintypes.HANDLE(process), 5000)
+            _close(thread)
+            _close(process)
             raise ConfinementNotApplied(
                 "the kernel boundary could not be applied ("
                 + ("; ".join(notes) or "unknown reason")
-                + "), and this run requires it; the script was not started"
+                + "), and this run requires it; the child was not started"
             )
 
         kernel32.ResumeThread(wintypes.HANDLE(thread))
+        launched = _Launched(
+            process=process,
+            thread=thread,
+            job=job,
+            pid=int(info.dwProcessId),
+            integrity_lowered=integrity_lowered,
+            job_applied=job_applied,
+            notes=notes,
+        )
+        job = 0  # owned by the caller now
+        return launched
+    finally:
+        for handle in (duplicate, token, job):
+            _close(handle)
+
+
+def spawn_confined(
+    argv: list[str],
+    *,
+    cwd: Path,
+    env: dict[str, str],
+    timeout: float,
+    max_memory_bytes: int = 0,
+    max_processes: int = 32,
+    low_integrity: bool = True,
+    output_dir: Path | None = None,
+    require: bool = False,
+) -> SpawnOutcome:
+    """Run ``argv`` inside a Job Object, at Low integrity where possible.
+
+    Output goes to files rather than pipes. Pipes would need two reader threads
+    to avoid the classic fill-the-buffer deadlock, and files cost nothing here:
+    the run is already bounded by a timeout, and the caller already truncates.
+    """
+    api = _api()
+    kernel32, wintypes = api.kernel32, api.wintypes
+
+    output_dir = Path(output_dir or cwd)
+    out_path = output_dir / "_minos_stdout.txt"
+    err_path = output_dir / "_minos_stderr.txt"
+
+    inheritable = api.SECURITY_ATTRIBUTES()
+    inheritable.nLength = ctypes.sizeof(api.SECURITY_ATTRIBUTES)
+    inheritable.lpSecurityDescriptor = None
+    inheritable.bInheritHandle = True
+
+    def open_for_write(path: Path) -> int:
+        handle = kernel32.CreateFileW(
+            str(path),
+            _GENERIC_WRITE,
+            _FILE_SHARE_READ | _FILE_SHARE_WRITE,
+            ctypes.byref(inheritable),
+            _CREATE_ALWAYS,
+            0,
+            None,
+        )
+        if handle == wintypes.HANDLE(-1).value:
+            raise OSError(_last_error(), f"cannot create {path}")
+        return int(handle)
+
+    handles: list[int] = []
+    launched: _Launched | None = None
+    timed_out = False
+    returncode = -1
+    try:
+        stdout_handle = open_for_write(out_path)
+        handles.append(stdout_handle)
+        stderr_handle = open_for_write(err_path)
+        handles.append(stderr_handle)
+        stdin_handle = int(
+            kernel32.CreateFileW(
+                "NUL",
+                _GENERIC_READ,
+                _FILE_SHARE_READ,
+                ctypes.byref(inheritable),
+                _OPEN_EXISTING,
+                0,
+                None,
+            )
+            or 0
+        )
+        handles.append(stdin_handle)
+
+        launched = _launch(
+            argv,
+            cwd=cwd,
+            env=env,
+            stdin=stdin_handle,
+            stdout=stdout_handle,
+            stderr=stderr_handle,
+            max_memory_bytes=max_memory_bytes,
+            max_processes=max_processes,
+            low_integrity=low_integrity,
+            require=require,
+        )
+        process = wintypes.HANDLE(launched.process)
 
         milliseconds = _INFINITE if timeout <= 0 else int(timeout * 1000)
-        timed_out = kernel32.WaitForSingleObject(wintypes.HANDLE(process), milliseconds) == (
-            _WAIT_TIMEOUT
-        )
+        timed_out = kernel32.WaitForSingleObject(process, milliseconds) == _WAIT_TIMEOUT
         if timed_out:
             # The job, not the process: a script that spawned children takes
             # them with it.
-            if job:
-                kernel32.TerminateJobObject(wintypes.HANDLE(job), 1)
+            if launched.job:
+                kernel32.TerminateJobObject(wintypes.HANDLE(launched.job), 1)
             else:
-                kernel32.TerminateProcess(wintypes.HANDLE(process), 1)
-            kernel32.WaitForSingleObject(wintypes.HANDLE(process), 5000)
+                kernel32.TerminateProcess(process, 1)
+            kernel32.WaitForSingleObject(process, 5000)
 
         code = wintypes.DWORD()
-        kernel32.GetExitCodeProcess(wintypes.HANDLE(process), ctypes.byref(code))
+        kernel32.GetExitCodeProcess(process, ctypes.byref(code))
         returncode = -1 if timed_out else int(code.value)
     finally:
-        for handle in (thread, process):
-            close(handle)
+        if launched is not None:
+            for handle in (launched.thread, launched.process, launched.job):
+                _close(handle)
         for handle in handles:
-            close(handle)
+            _close(handle)
 
     def read(path: Path) -> str:
         try:
@@ -514,7 +614,112 @@ def spawn_confined(
         stdout=stdout,
         stderr=stderr,
         timed_out=timed_out,
-        integrity_lowered=integrity_lowered,
-        job_object=job_applied,
-        detail="; ".join(notes),
+        integrity_lowered=launched.integrity_lowered,
+        job_object=launched.job_applied,
+        detail="; ".join(launched.notes),
     )
+
+
+class ConfinedProcess:
+    """A long-lived confined child, spoken to over its standard streams.
+
+    The same launch as :func:`spawn_confined` -- suspended, assigned to a job,
+    lowered to Low integrity, then resumed -- but with pipes rather than files,
+    because the child answers many questions over one run. ``max_processes=1``
+    by default: the child may not start anything, so whatever it is talked
+    into, it cannot launch a program to do it.
+
+    Only the child's ends of the pipes are made inheritable; the parent's ends
+    never are, and the child's are closed here as soon as it has them.
+    """
+
+    def __init__(
+        self,
+        argv: list[str],
+        *,
+        cwd: Path,
+        env: dict[str, str],
+        max_memory_bytes: int = 0,
+        max_processes: int = 1,
+        low_integrity: bool = True,
+        require: bool = False,
+    ) -> None:
+        import msvcrt
+
+        child_in, parent_in = os.pipe()
+        parent_out, child_out = os.pipe()
+        parent_err, child_err = os.pipe()
+        child_fds = (child_in, child_out, child_err)
+        get_handle: Callable[[int], int] = getattr(msvcrt, "get_osfhandle")  # noqa: B009
+        set_inheritable: Callable[[int, bool], None] = getattr(os, "set_handle_inheritable")  # noqa: B009
+        child_handles = [get_handle(fd) for fd in child_fds]
+        try:
+            for handle in child_handles:
+                set_inheritable(handle, True)
+            self._launched = _launch(
+                argv,
+                cwd=cwd,
+                env=env,
+                stdin=child_handles[0],
+                stdout=child_handles[1],
+                stderr=child_handles[2],
+                max_memory_bytes=max_memory_bytes,
+                max_processes=max_processes,
+                low_integrity=low_integrity,
+                require=require,
+            )
+        except BaseException:
+            for fd in (*child_fds, parent_in, parent_out, parent_err):
+                with contextlib.suppress(OSError):
+                    os.close(fd)
+            raise
+        for fd in child_fds:
+            os.close(fd)
+
+        self.pid = self._launched.pid
+        self.integrity_lowered = self._launched.integrity_lowered
+        self.job_object = self._launched.job_applied
+        self.detail = "; ".join(self._launched.notes)
+        self.stdin: IO[bytes] = os.fdopen(parent_in, "wb", buffering=0)
+        self.stdout: IO[bytes] = os.fdopen(parent_out, "rb")
+        self.stderr: IO[bytes] = os.fdopen(parent_err, "rb")
+        self._closed = False
+
+    def poll(self) -> int | None:
+        api = _api()
+        process = api.wintypes.HANDLE(self._launched.process)
+        if api.kernel32.WaitForSingleObject(process, 0) != _WAIT_OBJECT_0:
+            return None
+        code = api.wintypes.DWORD()
+        api.kernel32.GetExitCodeProcess(process, ctypes.byref(code))
+        return int(code.value)
+
+    def wait(self, timeout: float = 5.0) -> int | None:
+        api = _api()
+        api.kernel32.WaitForSingleObject(
+            api.wintypes.HANDLE(self._launched.process), int(timeout * 1000)
+        )
+        return self.poll()
+
+    def kill(self) -> None:
+        api = _api()
+        if self._launched.job:
+            api.kernel32.TerminateJobObject(api.wintypes.HANDLE(self._launched.job), 1)
+        else:
+            api.kernel32.TerminateProcess(api.wintypes.HANDLE(self._launched.process), 1)
+
+    def close(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        with contextlib.suppress(OSError):
+            self.stdin.close()
+        if self.wait(2.0) is None:
+            self.kill()
+            self.wait(5.0)
+        for stream in (self.stdout, self.stderr):
+            with contextlib.suppress(OSError):
+                stream.close()
+        # Closing the job is what kills anything the child left behind.
+        for handle in (self._launched.thread, self._launched.process, self._launched.job):
+            _close(handle)

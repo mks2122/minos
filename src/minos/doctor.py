@@ -337,6 +337,16 @@ def _confinement_section() -> list[str]:
             f"({', '.join(o.value for o in CodeOrigin if not o.trusted)})"
         )
         lines.append("                 will be refused rather than run in the subprocess jail.")
+
+    from .config import settings
+    from .planner.isolated import isolation_available
+
+    if settings().isolate_planner:
+        lines.append(f"    planner    : own process -- {isolation_available()}")
+    else:
+        lines.append(
+            "    planner    : IN-PROCESS (MINOS_ISOLATE_PLANNER=0) -- shares the broker's rights"
+        )
     return lines
 
 
