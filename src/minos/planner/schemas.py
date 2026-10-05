@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from typing import Any
 
-__all__ = ["FINISH_TOOL", "operation_for_tool", "tool_definitions"]
+__all__ = ["FINISH_TOOL", "PLAN_TOOL", "operation_for_tool", "tool_definitions"]
 
 
 def _tool(
@@ -141,6 +141,70 @@ _SCHEMAS: dict[str, dict[str, Any]] = {
             },
         },
         ["url"],
+    ),
+    "web.open": _tool(
+        "web_open",
+        (
+            "Open a website in the browser this runtime controls. Use this for "
+            "any website -- never the ui_* tools. The result lists the page's "
+            "controls as references, e.g. 'e12 button \"Start a post\"'; pass a "
+            "reference as 'ref' to web_click, web_fill or web_press."
+        ),
+        {"url": {"type": "string", "description": "e.g. 'https://www.linkedin.com/feed/'"}},
+        ["url"],
+    ),
+    "web.snapshot": _tool(
+        "web_snapshot",
+        (
+            "List the current page's controls with fresh references, and a "
+            "little of its text. Call it when a reference is stale or you are "
+            "unsure what is on the page."
+        ),
+        {},
+        [],
+    ),
+    "web.read": _tool(
+        "web_read",
+        "Read the current page's visible text, when you need to read rather than act.",
+        {},
+        [],
+    ),
+    "web.click": _tool(
+        "web_click",
+        (
+            "Click a control on the current page by its reference from the "
+            "latest control list. The result is the page's new control list."
+        ),
+        {
+            "ref": {"type": "string", "description": "A reference like 'e12'."},
+            "text": {
+                "type": "string",
+                "description": "Only without 'ref': the control's exact visible name.",
+            },
+        },
+        [],
+    ),
+    "web.fill": _tool(
+        "web_fill",
+        (
+            "Put text into a text box or editor on the current page, replacing "
+            "what it holds. Works for rich editors such as a post composer. "
+            "Real line breaks are kept."
+        ),
+        {
+            "ref": {"type": "string", "description": "A textbox reference like 'e31'."},
+            "text": {"type": "string"},
+        },
+        ["ref", "text"],
+    ),
+    "web.press": _tool(
+        "web_press",
+        "Press a key on the current page, e.g. 'Enter', 'Escape' or 'ctrl+enter'.",
+        {
+            "key": {"type": "string"},
+            "ref": {"type": "string", "description": "Optional: the control to press it in."},
+        },
+        ["key"],
     ),
     "user.ask": _tool(
         "ask_user",
@@ -336,6 +400,20 @@ FINISH_TOOL = _tool(
     },
     ["summary", "succeeded"],
 )
+
+PLAN_TOOL = _tool(
+    "plan",
+    "Submit the goal split into ordered subtasks.",
+    {
+        "subtasks": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "One concrete, self-contained instruction per item, in order.",
+        }
+    },
+    ["subtasks"],
+)
+"""Offered alone, for decomposition. Never routed: it is not an operation."""
 
 # Tool names cannot contain dots, so they are the operation with dots replaced.
 _TOOL_TO_OPERATION = {schema["name"]: op for op, schema in _SCHEMAS.items()}

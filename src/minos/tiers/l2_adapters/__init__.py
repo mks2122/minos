@@ -6,5 +6,13 @@ rather than "the file changed" or "a click landed somewhere".
 """
 
 from .tabular import CellOracle, CsvBackend, TabularAdapter, register_backend
+from .web import WebAdapter, playwright_available
 
-__all__ = ["CellOracle", "CsvBackend", "TabularAdapter", "register_backend"]
+__all__ = [
+    "CellOracle",
+    "CsvBackend",
+    "TabularAdapter",
+    "WebAdapter",
+    "playwright_available",
+    "register_backend",
+]
