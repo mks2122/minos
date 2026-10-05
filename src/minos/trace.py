@@ -258,6 +258,16 @@ class ConsolePrinter:
         mark = {"ok": "ok", "denied": "DENIED", "failed": "FAILED"}.get(status, status.upper())
         self._write(f"        -> {mark}" + (f": {event.text}" if event.text else ""))
 
+    def _on_subtasks(self, event: Event) -> None:
+        subtasks = event.data.get("subtasks") or []
+        self._write(f"\n  split into {len(subtasks)} subtasks:")
+        for number, subtask in enumerate(subtasks, 1):
+            self._write(f"    {number}. {subtask}")
+
+    def _on_subtask(self, event: Event) -> None:
+        index, of = event.data.get("index", "?"), event.data.get("of", "?")
+        self._write(f"\n  == subtask {index}/{of}: {event.text}")
+
     def _on_finish(self, event: Event) -> None:
         self._write(f"\n  {event.text}")
 

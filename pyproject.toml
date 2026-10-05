@@ -30,6 +30,9 @@ claude = ["anthropic>=0.40"]
 # by name through UI Automation, which is the difference between automation that
 # survives a window resize and automation that does not.
 gui = ["comtypes>=1.4; sys_platform == 'win32'"]
+# The web tier: pages driven by their controls, not by coordinates. Uses an
+# installed Chrome or Edge; without either, also: uv run playwright install chromium
+web = ["playwright>=1.45"]
 
 sandbox = [
     "pypdf>=4.0",
@@ -87,5 +90,5 @@ files = ["src/minos"]
 # anthropic and comtypes are optional extras. A checkout without them must still
 # typecheck, and comtypes does not exist off Windows at all.
 [[tool.mypy.overrides]]
-module = ["anthropic.*", "comtypes.*"]
+module = ["anthropic.*", "comtypes.*", "playwright.*"]
 ignore_missing_imports = true

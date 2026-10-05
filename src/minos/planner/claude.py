@@ -25,9 +25,19 @@ from typing import Any
 from ..scopes import ScopeSet
 from ..types import ActionRequest
 from .base import Done, Observation, Step
-from .schemas import operation_for_tool, tool_definitions
+from .schemas import PLAN_TOOL, operation_for_tool, tool_definitions
 
-__all__ = ["ASK_PROMPT", "GUI_PROMPT", "SYSTEM_PROMPT", "ClaudePlanner", "system_prompt"]
+__all__ = [
+    "ASK_PROMPT",
+    "DECOMPOSE_PROMPT",
+    "GUI_PROMPT",
+    "SYSTEM_PROMPT",
+    "WEB_PROMPT",
+    "ClaudePlanner",
+    "decompose_prompt",
+    "parse_subtasks",
+    "system_prompt",
+]
 
 DEFAULT_MODEL = "claude-opus-5"
 
@@ -89,6 +99,62 @@ landed in the right place; a screenshot showing it is better evidence.
 say so."""
 
 
+WEB_PROMPT = """
+
+THE WEB
+
+You have `web_*` tools: a browser this runtime controls, driven by the page's \
+controls rather than by the mouse. Use them for every website.
+
+- `web_open` a URL. Its result lists the page's controls with references: \
+`e12 button "Start a post"`. Act on one by passing its reference as `ref`.
+- `web_click` a button or link; `web_fill` a text box or editor (it replaces \
+the content, and keeps line breaks); `web_press` a key.
+- Every `web_open`, `web_click` and `web_press` result is the page's new \
+control list. Use only references from the latest list; older ones stop \
+working. If you are unsure, call `web_snapshot`.
+- When a dialog is open its controls are listed first. Something you expect \
+may be further down the page: look at `page_text`, or `web_read`.
+- If the page wants a sign-in, ask the person to sign in in the minos browser \
+window and to tell you when they have, then `web_snapshot`. Never type a \
+password.
+- Commit controls (Post, Send, Save, Delete...) stop for the person's \
+approval. That is expected: request the click and let them decide.
+- Only report success for what the control list or page text shows."""
+
+
+DESKTOP_PROMPT = """
+
+THE DESKTOP
+
+The `ui_*` tools drive desktop applications with the real mouse and keyboard. \
+Never use them for a website -- the `web_*` tools are for that. Call \
+`ui_screenshot` before clicking, to learn what the controls are called, and \
+name the control with `element` rather than giving coordinates."""
+
+
+DECOMPOSE_PROMPT = """\
+Split the goal below into the subtasks a careful person would do one after \
+another. Rules:
+
+- At most 6 subtasks, in order. Fewer is better.
+- Each one is a concrete instruction that can be finished on its own and says \
+what it produces -- "draft the text of X from the files in the workspace", \
+not "think about X".
+- A later subtask only sees what earlier ones reported, so a subtask that \
+produces something later ones need (text, a value, a URL) must say to report \
+it.
+- Do not add work the goal did not ask for. Do not split a goal that is \
+already one simple action: return it as the only subtask.
+
+The tools that will be available: {tools}
+
+GOAL
+{goal}
+
+Call `plan` with the subtasks."""
+
+
 ASK_PROMPT = """
 
 ASKING THE PERSON
@@ -107,11 +173,49 @@ def system_prompt(operations: tuple[str, ...]) -> str:
     cannot open a browser, and rule 1 then sends it straight to `finish`.
     """
     prompt = SYSTEM_PROMPT
+    web = any(op.startswith("web.") for op in operations)
+    if web:
+        prompt += WEB_PROMPT
     if any(op.startswith("ui.") for op in operations):
-        prompt += GUI_PROMPT
+        # With the web tier present the desktop section must not send the
+        # model to a website through the mouse: that is the path that fails.
+        prompt += DESKTOP_PROMPT if web else GUI_PROMPT
     if "user.ask" in operations:
         prompt += ASK_PROMPT
     return prompt
+
+
+def decompose_prompt(goal: str, operations: tuple[str, ...]) -> str:
+    tools = ", ".join(sorted({op.split(".")[0] for op in operations})) or "none"
+    return DECOMPOSE_PROMPT.format(goal=goal, tools=tools)
+
+
+_MAX_SUBTASKS = 6
+
+
+def parse_subtasks(value: Any) -> list[str]:
+    """A model's plan, cleaned: strings only, no blanks, no numbering, capped.
+
+    Accepts the ``plan`` tool's list, or prose with one subtask per line when a
+    model answered in text instead -- small ones often do.
+    """
+    if isinstance(value, str):
+        lines = value.splitlines()
+    elif isinstance(value, (list, tuple)):
+        lines = [str(item) for item in value]
+    else:
+        return []
+    cleaned: list[str] = []
+    for line in lines:
+        text = line.strip().lstrip("-*").strip()
+        head, dot, rest = text.partition(".")
+        if dot and head.isdigit():
+            text = rest.strip()
+        elif text[:1].isdigit() and text[1:3] in (") ", ": "):
+            text = text[2:].strip()
+        if len(text) >= 3:
+            cleaned.append(text)
+    return cleaned[:_MAX_SUBTASKS]
 
 
 @dataclass
@@ -195,6 +299,30 @@ class ClaudePlanner:
             params=params,
         )
 
+    def reset(self) -> None:
+        """Forget the conversation, so the next goal starts from nothing."""
+        self._messages = []
+        self._pending_tool_use_id = None
+
+    def decompose(self, goal: str, scopes: ScopeSet) -> list[str]:
+        """Split a large goal into ordered subtasks. One item means "do not split".
+
+        A separate call with only the ``plan`` tool on offer: it requests no
+        action, so there is nothing for the broker to admit. Forcing the tool
+        is incompatible with extended thinking, so this call goes without it.
+        """
+        response = self.client.messages.create(
+            model=self.model,
+            max_tokens=2048,
+            tools=[PLAN_TOOL],
+            tool_choice={"type": "tool", "name": "plan"},
+            messages=[{"role": "user", "content": decompose_prompt(goal, self.operations)}],
+        )
+        block = self._first_tool_use(response)
+        if block is None:
+            return parse_subtasks(self._text_of(response))
+        return parse_subtasks(_as_dict(block.input).get("subtasks"))
+
     # -- internals ---------------------------------------------------------
 
     def _opening(self, goal: str, scopes: ScopeSet) -> str:
@@ -214,6 +342,8 @@ class ClaudePlanner:
             payload["error"] = observation.error
         if observation.result is not None:
             payload["result"] = _jsonable(observation.result)
+        if observation.warning:
+            payload["warning"] = observation.warning
 
         return {
             "type": "tool_result",

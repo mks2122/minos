@@ -244,6 +244,20 @@ Scopes are flags, not configuration buried in a file:
 | `--allow-delete` | `fs.delete` |
 | `--allow-open` | `app.open` — launch files in their default application |
 | `--allow-gui` | `ui.input` — **your real mouse and keyboard**. `Ctrl+Alt+Esc` aborts |
+| `--allow-web` | `web.input` — act in web pages by their controls, in a browser minos owns (implied by `--allow-gui`) |
+
+**Websites** go through the web tier when Playwright is installed
+(`uv sync --extra web`). A page is read as a list of its controls —
+`e12 button "Start a post"` — and the planner clicks and fills by reference,
+never by coordinate. It uses your installed Chrome or Edge, with its own profile
+in `~/.minos/browser`: sign in to a site once in that window and it stays signed
+in. Clicks on commit controls (Post, Send, Delete...) still stop for you.
+
+**Large goals are split.** A long goal is first broken into a few subtasks, and
+each runs with a fresh planner context, seeing only what the earlier ones
+reported. `--no-split` turns this off. A **loop guard** warns the planner the
+second time an identical request fails, or the same error repeats, and ends the
+run the third time.
 
 ### Fully local
 

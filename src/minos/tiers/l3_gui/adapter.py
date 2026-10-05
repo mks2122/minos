@@ -116,7 +116,13 @@ class GuiAdapter:
             )
 
         if op == "ui.click":
-            element = request.params.get("element")
+            # Small models reach for "target" or "name"; refusing those over a
+            # spelling cost a run its step. The approver still reads only
+            # "element", so an aliased click is treated as unknown and asks.
+            element = next(
+                (request.params[k] for k in ("element", "target", "name") if request.params.get(k)),
+                None,
+            )
             if element:
                 return self._grounded_click(request, str(element), oracle, window)
 

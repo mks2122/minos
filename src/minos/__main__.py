@@ -122,7 +122,7 @@ def execute_run(
         ProcessAdapter,
         UserAdapter,
     )
-    from .tiers.l2_adapters import TabularAdapter
+    from .tiers.l2_adapters import TabularAdapter, WebAdapter, playwright_available
     from .tiers.l2_code import CodeAdapter
     from .tiers.l3_gui import GuiAdapter
     from .trace import ConsolePrinter, SessionRecorder, fan_out
@@ -155,9 +155,15 @@ def execute_run(
         # The virtual device drives the real desktop. Never implicit.
         scopes.append("ui.input:*")
     allow_browser = bool(getattr(args, "allow_browser", False) or args.allow_gui)
-    if allow_browser:
-        # Opening a page is a read; what is done in it goes through ui.input.
+    # The web tier acts in pages without the mouse, so --allow-gui implies it:
+    # it is strictly less reach than the real input device.
+    want_web = bool(getattr(args, "allow_web", False) or args.allow_gui)
+    web = want_web and playwright_available()
+    if allow_browser or web:
+        # Opening a page is a read; acting in one is web.input or ui.input.
         scopes.append("browser.open:*")
+    if web:
+        scopes.append("web.input:*")
     # Someone is at the terminal to answer. Not under --yes, which means
     # "unattended", and not through a pipe, where input() would read the pipe.
     can_ask = not args.yes and sys.stdin.isatty()
@@ -185,7 +191,11 @@ def execute_run(
         "code.run",
         "code.materialize",
     )
-    if allow_browser:
+    if web:
+        # One way to a website, not two. Offered both, a small model opens the
+        # page in the person's browser and is back to clicking coordinates.
+        operations += ("web.open", "web.snapshot", "web.read", "web.click", "web.fill", "web.press")
+    elif allow_browser:
         operations += ("browser.open",)
     if args.allow_gui:
         operations += ("ui.click", "ui.type", "ui.key", "ui.screenshot")
@@ -206,11 +216,15 @@ def execute_run(
     if args.watch:
         watcher.start()
 
+    web_adapter = WebAdapter.launching() if web else None
+
     def release() -> None:
         # A one-shot CLI could leave these to process exit. A conversation runs
         # many goals in one process, and a leaked watcher keeps scanning.
         watcher.stop()
         memory.close()
+        if web_adapter is not None:
+            web_adapter.close()
 
     if planner is None:
         try:
@@ -277,6 +291,7 @@ def execute_run(
                 MemoryAdapter(memory, roots=(workspace,)),
                 ProcessAdapter(),
                 TabularAdapter(),
+                *((web_adapter,) if web_adapter is not None else ()),
                 CodeAdapter(
                     state=state,
                     origin=CodeOrigin(code_origin),
@@ -288,7 +303,7 @@ def execute_run(
             )
         ),
         broker=broker,
-        limits=AgentLimits(max_steps=args.max_steps),
+        limits=AgentLimits(max_steps=args.max_steps, split=getattr(args, "split", True)),
     )
 
     # A context too small to hold the tool schemas is invisible at runtime: the
@@ -298,6 +313,11 @@ def execute_run(
     if warning:
         print(f"\n  !! {warning}")
 
+    if want_web and not web:
+        print(
+            "\n  (no web tier: Playwright is not installed -- uv sync --extra web. "
+            "Websites fall back to the GUI tier.)"
+        )
     print(f"\ngoal      : {args.goal}")
     print(f"workspace : {workspace}")
     print("scopes    :")
@@ -320,12 +340,12 @@ def execute_run(
             print()
             try:
                 with panic:
-                    trajectory = agent.run(task, goal_id="cli")
+                    trajectory = agent.run_task(task, goal_id="cli")
             finally:
                 if ghost is not None:
                     ghost.close()
         else:
-            trajectory = agent.run(task, goal_id="cli")
+            trajectory = agent.run_task(task, goal_id="cli")
     except Exception as exc:
         printer.stop_spinner()
         print(f"\nthe planner failed: {type(exc).__name__}: {exc}", file=sys.stderr)
@@ -347,11 +367,8 @@ def execute_run(
 
     print()
     print("-" * 64)
-    for step, outcome in zip(trajectory.steps, trajectory.outcomes, strict=False):
-        mark = {"ok": "ok  ", "denied": "DENY", "dry_run": "dry "}.get(outcome.status, "FAIL")
-        print(f"  {mark}  [{outcome.invocation.tier}] {step.operation}")
-        if outcome.status != "ok":
-            print(f"        {outcome.error or outcome.decision.rationale}")
+    for line in summary_lines(trajectory):
+        print(line)
 
     finished = trajectory.finished
     print()
@@ -376,6 +393,8 @@ def execute_run(
             )
     memory.end_session("cli")
     memory.close()
+    if web_adapter is not None:
+        web_adapter.close()
     print(f"  memory: {state / 'memory.db'}")
     if recorder is not None:
         print(f"  trace : {recorder.path}")
@@ -398,6 +417,28 @@ def execute_run(
         end_seq=broker.audit.next_seq(),
         missing=tuple(missing),
     )
+
+
+def summary_lines(trajectory: Any) -> list[str]:
+    """One line per step, from the observations.
+
+    Not from zipping steps against outcomes: a step no adapter could route has
+    no outcome, and pairing the two lists by position shifts every line after
+    it onto the wrong step.
+    """
+    tiers = {id(o.invocation.request): o.invocation.tier for o in trajectory.outcomes}
+    lines: list[str] = []
+    for observation in trajectory.observations:
+        status = observation.status
+        mark = {"ok": "ok  ", "denied": "DENY", "dry_run": "dry ", "unroutable": "SKIP"}.get(
+            status, "FAIL"
+        )
+        tier = tiers.get(id(observation.request))
+        where = f"[{tier}] " if tier is not None else ""
+        lines.append(f"  {mark}  {where}{observation.request.operation}")
+        if status not in ("ok", "dry_run"):
+            lines.append(f"        {observation.error or observation.detail}")
+    return lines
 
 
 def _with_context(goal: str, context: str) -> str:
@@ -859,6 +900,22 @@ def build_parser() -> argparse.ArgumentParser:
             "let the agent open web pages in your browser (implied by --allow-gui). "
             "It asks which browser profile to use once per site and remembers."
         ),
+    )
+    run.add_argument(
+        "--allow-web",
+        action="store_true",
+        help=(
+            "let the agent act in web pages -- click, fill, press -- in a browser "
+            "it controls, by the page's controls rather than the mouse (implied by "
+            "--allow-gui; needs: uv sync --extra web). Sign in once in that "
+            "window; it keeps its own profile in ~/.minos/browser."
+        ),
+    )
+    run.add_argument(
+        "--no-split",
+        dest="split",
+        action="store_false",
+        help="run the goal as one task, without splitting a large one into subtasks",
     )
     run.add_argument(
         "--gui-confirm",

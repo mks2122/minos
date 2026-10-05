@@ -155,6 +155,14 @@ class EffectContract:
     compensation: ActionRequest | None = None
     """Required for ``COMPENSABLE``; the declared inverse."""
 
+    control: str = ""
+    """The name of the control an input acts on, when the adapter knows it.
+
+    Set by adapters that resolve a reference to a named control (the web
+    tier's ``e12`` -> "Post"), so the approver can tell a commit from an
+    ordinary click without trusting the planner to describe its own request.
+    """
+
     expects_change: bool | None = None
     """Whether the targets should differ afterwards.
 
