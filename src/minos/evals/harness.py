@@ -47,7 +47,15 @@ from ..types import Tier
 from .invariants import check_invariants
 from .task import Task
 
-__all__ = ["EvalReport", "PlannerFactory", "TaskResult", "default_adapters", "run_suite"]
+__all__ = [
+    "EvalReport",
+    "PlannerFactory",
+    "TaskResult",
+    "VarianceReport",
+    "default_adapters",
+    "run_suite",
+    "run_suite_repeatedly",
+]
 
 PlannerFactory = Callable[[Task, Path], Planner]
 
@@ -294,8 +302,9 @@ def run_task(
             # and is recorded by name, so no audit entry claims a human said yes.
             approver=task.approver or always_deny,
         )
+        planner = planner_factory(task, workspace)
         agent = Agent(
-            planner=planner_factory(task, workspace),
+            planner=planner,
             router=router,
             broker=broker,
             limits=AgentLimits(max_steps=task.max_steps),
@@ -308,6 +317,11 @@ def run_task(
         except Exception as exc:
             trajectory = Trajectory(goal=task.goal, goal_id=task.id)
             error = f"{type(exc).__name__}: {exc}"
+        finally:
+            # An isolated planner is a child process; one per task, closed here.
+            close = getattr(planner, "close", None)
+            if callable(close):
+                close()
         duration = time.perf_counter() - started
 
         try:
@@ -372,3 +386,136 @@ def run_suite(
     for task in tasks:
         report.results.append(run_task(task, planner_factory, adapters))
     return report
+
+
+@dataclass
+class VarianceReport:
+    """The same suite, run several times. One run is an anecdote.
+
+    Agents are stochastic, so a single score overstates how dependable the
+    agent is. This reports the spread, and which tasks moved between runs --
+    a task that passes 2 times in 5 is a different fact from one that passes
+    5 in 5, and an aggregate hides which is which.
+    """
+
+    runs: list[EvalReport] = field(default_factory=list)
+
+    @property
+    def scores(self) -> list[int]:
+        return [r.passed for r in self.runs]
+
+    @property
+    def total(self) -> int:
+        return self.runs[0].total if self.runs else 0
+
+    @property
+    def mean(self) -> float:
+        return statistics.fmean(self.scores) if self.scores else 0.0
+
+    @property
+    def stdev(self) -> float:
+        return statistics.stdev(self.scores) if len(self.scores) > 1 else 0.0
+
+    @property
+    def interval(self) -> tuple[float, float]:
+        """An approximate 95% interval for the mean score.
+
+        A normal approximation, which flatters small samples; it is printed
+        beside the minimum and maximum so nobody has to trust it alone.
+        """
+        if len(self.scores) < 2:
+            return (self.mean, self.mean)
+        half = 1.96 * self.stdev / (len(self.scores) ** 0.5)
+        return (max(self.mean - half, 0.0), min(self.mean + half, float(self.total)))
+
+    def per_task(self) -> dict[str, tuple[int, int]]:
+        counts: dict[str, tuple[int, int]] = {}
+        for report in self.runs:
+            for result in report.results:
+                passed, seen = counts.get(result.task_id, (0, 0))
+                counts[result.task_id] = (passed + int(result.succeeded), seen + 1)
+        return counts
+
+    @property
+    def unstable(self) -> list[str]:
+        """Tasks that passed in some runs and failed in others."""
+        return sorted(t for t, (passed, seen) in self.per_task().items() if 0 < passed < seen)
+
+    @property
+    def violations(self) -> list[str]:
+        return [f"run {i + 1}: {v}" for i, r in enumerate(self.runs) for v in r.violations]
+
+    def text(self) -> str:
+        if not self.runs:
+            return "no runs"
+        first = self.runs[0]
+        low, high = self.interval
+        lines = [
+            "",
+            f"minos eval x{len(self.runs)} -- planner={first.planner_name} model={first.model}",
+            "=" * 68,
+            "",
+            "  runs           " + "  ".join(f"{s}/{self.total}" for s in self.scores),
+            f"  mean           {self.mean:.2f}/{self.total}  (sd {self.stdev:.2f})",
+            f"  range          {min(self.scores)} to {max(self.scores)}",
+            f"  ~95% interval  {low:.1f} to {high:.1f}   (normal approximation; see range)",
+            "",
+            "  per task (passed / runs)",
+        ]
+        for task_id, (passed, seen) in sorted(self.per_task().items()):
+            flag = "   <-- unstable" if 0 < passed < seen else ""
+            lines.append(f"    {passed}/{seen}  {task_id}{flag}")
+        violations = self.violations
+        lines.append("")
+        lines.append(
+            f"  invariant violations across all runs: {len(violations)}"
+            + ("   (all held)" if not violations else "   <-- the runtime broke a promise")
+        )
+        for violation in violations[:10]:
+            lines.append(f"    {violation}")
+        lines.append("")
+        return "\n".join(lines)
+
+    def to_json(self) -> str:
+        low, high = self.interval
+        return json.dumps(
+            {
+                "summary": {
+                    "planner": self.runs[0].planner_name if self.runs else "",
+                    "model": self.runs[0].model if self.runs else "",
+                    "runs": len(self.runs),
+                    "tasks": self.total,
+                    "scores": self.scores,
+                    "mean": round(self.mean, 3),
+                    "stdev": round(self.stdev, 3),
+                    "interval_95": [round(low, 2), round(high, 2)],
+                    "unstable": self.unstable,
+                    "invariant_violations": len(self.violations),
+                },
+                "per_task": {
+                    task: {"passed": passed, "runs": seen}
+                    for task, (passed, seen) in sorted(self.per_task().items())
+                },
+                "runs": [json.loads(r.to_json()) for r in self.runs],
+            },
+            indent=2,
+        )
+
+
+def run_suite_repeatedly(
+    tasks: Sequence[Task],
+    planner_factory: PlannerFactory,
+    runs: int,
+    *,
+    planner_name: str = "scripted",
+    model: str = "n/a",
+    progress: Callable[[int, EvalReport], None] | None = None,
+) -> VarianceReport:
+    """Run the suite ``runs`` times, fresh workspaces and planners every time."""
+    variance = VarianceReport()
+    for index in range(runs):
+        report = run_suite(tasks, planner_factory, planner_name=planner_name, model=model)
+        variance.runs.append(report)
+        if progress is not None:
+            progress(index + 1, report)
+    return variance

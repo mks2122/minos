@@ -19,7 +19,7 @@ from pathlib import Path
 
 from ..planner.base import Planner
 from ..planner.providers import PROVIDERS, MissingKey, build_planner, resolve
-from .harness import PlannerFactory, run_suite
+from .harness import PlannerFactory, run_suite, run_suite_repeatedly
 from .suite import SUITE, scripted_factory
 from .task import Task
 
@@ -61,6 +61,18 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--json", type=Path, help="write the full report here")
     parser.add_argument("--baseline", type=Path, help="compare against a previous run")
     parser.add_argument("--only", help="run tasks whose id contains this substring")
+    parser.add_argument(
+        "--runs",
+        type=int,
+        default=1,
+        help="run the suite this many times and report the spread, not one score",
+    )
+    parser.add_argument(
+        "--in-process-planner",
+        dest="isolate",
+        action="store_false",
+        help="keep a model planner in this process instead of a confined child",
+    )
     args = parser.parse_args(argv)
 
     tasks = [t for t in SUITE if not args.only or args.only in t.id]
@@ -95,6 +107,25 @@ def main(argv: list[str] | None = None) -> int:
         factory = scripted_factory
         name, model = "scripted", "n/a"
 
+    if args.isolate and args.planner != "scripted":
+        factory = _isolated(factory)
+
+    if args.runs > 1:
+        variance = run_suite_repeatedly(
+            tasks,
+            factory,
+            args.runs,
+            planner_name=name,
+            model=model,
+            progress=lambda i, r: print(f"  run {i}/{args.runs}: {r.passed}/{r.total}", flush=True),
+        )
+        print(variance.text())
+        if args.json:
+            args.json.write_text(variance.to_json(), encoding="utf-8")
+            print(f"  wrote {args.json}\n")
+        perfect = all(r.passed == r.total for r in variance.runs)
+        return 0 if perfect and not variance.violations else 1
+
     report = run_suite(tasks, factory, planner_name=name, model=model)
     print(report.text())
 
@@ -119,13 +150,36 @@ def main(argv: list[str] | None = None) -> int:
     return exit_code
 
 
+def _isolated(factory: PlannerFactory) -> PlannerFactory:
+    """Each task's planner in its own confined process, as `minos run` does it."""
+    from ..planner.isolated import IsolatedPlanner
+
+    def isolated(task: Task, workspace: Path) -> Planner:
+        planner = factory(task, workspace)
+        timeout = float(getattr(planner, "timeout", 600.0)) + 120.0
+        return IsolatedPlanner.of(planner, timeout=timeout)
+
+    return isolated
+
+
 def _local_factory(base_url: str, model: str) -> PlannerFactory:
     """Point the suite at a local model and get your own number."""
+    from ..config import settings
     from ..planner.local import LocalPlanner
+
+    # The same knobs `minos run` honours. Above all the context size: budgeting
+    # for 16k against a server that serves 6k is the silent truncation the
+    # context management exists to prevent.
+    cfg = settings()
 
     def factory(task: Task, workspace: Path) -> Planner:
         return LocalPlanner(
-            operations=task.operations or _OPERATIONS, base_url=base_url, model=model
+            operations=task.operations or _OPERATIONS,
+            base_url=base_url,
+            model=model,
+            context_tokens=cfg.context_tokens,
+            timeout=cfg.planner_timeout,
+            thinking=cfg.thinking,
         )
 
     return factory

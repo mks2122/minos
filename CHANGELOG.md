@@ -8,6 +8,14 @@ All notable changes to minos are recorded here. The format follows
 
 ### Added
 
+- **`minos eval --runs N`** runs the suite N times and reports the spread: each
+  run's score, the mean and standard deviation, the range, an approximate 95%
+  interval, and every task that passed in some runs and failed in others.
+  Invariant violations are counted across all runs. `--json` writes every run.
+- Model planners in `minos eval` run in a confined child process, as they do in
+  `minos run` (`--in-process-planner` turns that off). The local planner picks
+  up `MINOS_CONTEXT_TOKENS`, `MINOS_PLANNER_TIMEOUT` and `MINOS_THINKING` the
+  same way `minos run` does.
 - **End-to-end tests for the container backend**, run wherever a container
   engine answers (CI has none, so there they skip): the `code.run` to
   `code.materialize` round trip through the broker, no network interface, a
