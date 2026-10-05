@@ -48,7 +48,7 @@ Written so nobody has to guess which parts are real.
 | **`net.http`** | Registered as a capability; no adapter implements it |
 | **Sandbox reads on Windows** | Writes are confined by a low-integrity token; reads are not. Windows' mandatory policy is no-write-up, and closing the rest needs an AppContainer |
 | **Kernel confinement outside `code.run`** | Landlock, seccomp, seatbelt and the Windows token confine code the model writes. The broker's other operations have only the broker's own mediation |
-| **Container backend unexercised in CI** | `ContainerSandbox` is implemented and tested against its command line; no CI runner here has an engine, so no end-to-end container run has been scored |
+| **Container backend not in CI** | CI has no engine, so CI tests it against its command line. `tests/test_container_end_to_end.py` runs it for real wherever an engine answers: 6/6 on Docker 29.2.1, Windows 11, 5 Oct 2026 (the code.run to materialize round trip through the broker, no network, read-only root, host invisible, uid 65534 with no capabilities). That first run found the container backend recording no confinement, now fixed |
 | **Audit anchoring** | The chain is tamper-evident, not tamper-proof. An external anchor is not implemented |
 | **Native file events** | The watcher polls. inotify / FSEvents / ReadDirectoryChangesW would be faster but are three different APIs with three sets of bugs |
 | **OS-wide window history** | Only openings *this runtime* performed are recorded. A document you double-clicked in Explorer is invisible |

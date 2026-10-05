@@ -406,6 +406,25 @@ def test_an_engine_that_is_not_running_is_reported_as_such(workspace):
     assert "installed but not running" in result.detail
 
 
+def test_every_container_result_says_what_confined_it(workspace, monkeypatch):
+    """A run that cannot say what held it is a run whose claims nobody can check.
+
+    Found by the first end-to-end run against a real engine: the subprocess
+    backend recorded its confinement and the container backend recorded none.
+    """
+    import subprocess as sp
+
+    sandbox = ContainerSandbox(engine="docker")
+    monkeypatch.setattr(
+        "minos.sandbox.container.subprocess.run",
+        lambda *a, **k: sp.CompletedProcess(a[0], 0, stdout="ok\n", stderr=""),
+    )
+    result = sandbox.run(workspace, "print('ok')", timeout=5)
+
+    assert result.confinement == sandbox.describe()
+    assert "no network" in result.confinement
+
+
 class _FakeWorkspace:
     """Just enough workspace to build a command line from."""
 

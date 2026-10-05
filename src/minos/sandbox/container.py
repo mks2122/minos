@@ -159,6 +159,7 @@ class ContainerSandbox:
                 artifacts=workspace.artifacts(),
                 timed_out=True,
                 duration=time.monotonic() - started,
+                confinement=self.describe(),
                 detail=f"killed after {limit}s",
             )
         except OSError as exc:
@@ -168,6 +169,7 @@ class ContainerSandbox:
                 stdout="",
                 stderr=str(exc),
                 duration=time.monotonic() - started,
+                confinement=self.describe(),
                 detail=f"the {self.engine} engine could not be started",
             )
 
@@ -195,6 +197,7 @@ class ContainerSandbox:
             stderr=_truncate(completed.stderr),
             artifacts=workspace.artifacts(),
             duration=time.monotonic() - started,
+            confinement=self.describe(),
             detail=detail,
         )
 

@@ -290,7 +290,7 @@ Anyone who can read that directory can read every file the agent has touched.
 - Kernel confinement covers `code.run` only; the broker's other operations have none
 - Windows confines sandbox *writes* but not *reads*; an AppContainer would close that
 - The GUI tier is Windows only; macOS and Linux have no driver yet
-- The container backend is not exercised by CI, which has no engine available
+- The container backend is not exercised by CI, which has no engine available. `tests/test_container_end_to_end.py` runs it for real wherever one is, and passed on Docker 29.2.1 on 5 Oct 2026
 - No network capability enforcement — `net.http` scopes parse and match, but nothing consumes them yet
 - No process sandboxing for `proc.spawn`
 - The isolated planner process can read the user's files and reach the network; only writes and process creation are refused
