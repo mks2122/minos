@@ -21,7 +21,7 @@
 <p align="center">
   <a href="docs/LOCAL.md"><img src="https://img.shields.io/badge/RUNS-100%25%20OFFLINE-2ea043?style=flat-square&labelColor=3a4350" alt=""></a>
   <a href="docs/STATUS.md"><img src="https://img.shields.io/badge/STATUS-BETA-d29922?style=flat-square&labelColor=3a4350" alt=""></a>
-  <a href="EVALUATION.md"><img src="https://img.shields.io/badge/TESTS-987%20PASSING-2ea043?style=flat-square&labelColor=3a4350" alt=""></a>
+  <a href="EVALUATION.md"><img src="https://img.shields.io/badge/TESTS-997%20PASSING-2ea043?style=flat-square&labelColor=3a4350" alt=""></a>
 </p>
 
 **A desktop agent that can't do anything you didn't allow — and can undo what it did.**
@@ -386,10 +386,11 @@ invariants** checked on every task — properties that must hold whatever the ag
 did, which is the only way to evaluate a runtime whose capabilities are generated at
 runtime rather than enumerated.
 
-`qwen3:8b` scored **14–15 of 18** on the alpha suite, fully offline on an 8 GB laptop
-GPU, across two full runs, and 6/6 on refusal both times; a single run is worth about
-±2 tasks. On the current 22-task suite it is being scored three times with
-`--runs 3`, and the result goes in [EVALUATION.md](EVALUATION.md) with its spread.
+`qwen3:8b` scores **19 of 22** here, fully offline on an 8 GB laptop GPU, in each of
+two full runs (14–15 of 18 on the smaller alpha suite). A hosted model, Nemotron 3
+Ultra on OpenRouter's free tier, passed every task it could be reached for — five —
+and the eleven where the free endpoint was overloaded are reported as unavailable,
+not as passes.
 The invariants held on every run. The three GUI tasks run against a simulated desktop,
 so they measure the runtime's handling of GUI work, not a model's skill with real apps.
 
@@ -402,7 +403,7 @@ measured: **[EVALUATION.md](EVALUATION.md)**.
 
 ```bash
 uv sync --all-extras
-uv run pytest                      # 987 passing
+uv run pytest                      # 997 passing
 uv run ruff check src tests
 uv run ruff format --check src tests
 uv run mypy                        # strict

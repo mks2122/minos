@@ -43,6 +43,7 @@ from __future__ import annotations
 
 import io
 import json
+import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
@@ -212,6 +213,9 @@ class LocalPlanner:
     last_context: Fitted | None = field(default=None, init=False)
     """How the last request was fitted: tokens, steps dropped, results shrunk."""
 
+    retries: int = 3
+    """Extra attempts after an overloaded or rate-limited answer."""
+
     _estimator: Estimator = field(default_factory=Estimator, init=False, repr=False)
     _squeeze: float = field(default=1.0, init=False, repr=False)
     _last_raw: int = field(default=0, init=False, repr=False)
@@ -340,7 +344,9 @@ class LocalPlanner:
             self._messages.append(self._tool_result(observations[-1]))
 
         try:
-            payload = self._post_fitted()
+            payload = self._post_retrying()
+        except UpstreamError as exc:
+            return Done(summary=str(exc), succeeded=False, unavailable=exc.transient)
         except ContextOverflow as exc:
             return Done(summary=f"the conversation no longer fits: {exc}", succeeded=False)
         except urllib.error.HTTPError as exc:
@@ -482,6 +488,52 @@ class LocalPlanner:
         return Budget.for_window(
             window, fixed=self._estimator.tokens(tools), max_output=self.max_tokens
         )
+
+    def _post_retrying(self) -> dict[str, Any]:
+        """Send, and ride out the failures that pass on their own.
+
+        Hosted endpoints -- free tiers above all -- answer "overloaded" or
+        "rate limited" routinely, either as an HTTP status or, on OpenRouter,
+        as an error object inside a 200. Those are retried a few times with
+        backoff, honouring ``Retry-After``; anything else is reported at once.
+        A response with neither ``choices`` nor an error is an error too:
+        indexing into it is how a run used to die of ``KeyError: 'choices'``.
+        """
+        delay = 2.0
+        for attempt in range(self.retries + 1):
+            last = attempt == self.retries
+            try:
+                payload = self._post_fitted()
+            except urllib.error.HTTPError as exc:
+                if exc.code not in _TRANSIENT_STATUS:
+                    raise
+                if last:
+                    raise UpstreamError(
+                        f"{self.label} is still unavailable after {self.retries + 1} "
+                        f"attempts (HTTP {exc.code}). Try again later or pick another model.",
+                        transient=True,
+                    ) from exc
+                wait = _retry_after(exc.headers) or delay
+            else:
+                error = payload.get("error") if isinstance(payload, dict) else None
+                if not error and isinstance(payload, dict) and payload.get("choices"):
+                    return payload
+                code, message = _body_error(error)
+                if not error:
+                    raise UpstreamError(f"{self.label} returned no choices and no error")
+                if code not in _TRANSIENT_STATUS and "overloaded" not in message.lower():
+                    raise UpstreamError(f"{self.label} reported an error ({code}): {message}")
+                if last:
+                    raise UpstreamError(
+                        f"{self.label} is still unavailable after {self.retries + 1} "
+                        f"attempts ({code}): {message}. Free models are often overloaded; "
+                        "try again later or pick another model.",
+                        transient=True,
+                    )
+                wait = delay
+            time.sleep(min(wait, 30.0))
+            delay *= 2
+        raise UpstreamError(f"{self.label} could not be reached")  # pragma: no cover
 
     def _post_fitted(self) -> dict[str, Any]:
         """Send the conversation, fitted; on an overflow the server reports, once more.
@@ -753,3 +805,35 @@ def discover_context(base_url: str, model: str, headers: dict[str, str]) -> int:
     except Exception:
         return 0
     return 0
+
+
+class UpstreamError(RuntimeError):
+    """The endpoint answered, with an error rather than a completion."""
+
+    def __init__(self, message: str, *, transient: bool = False) -> None:
+        super().__init__(message)
+        self.transient = transient
+        """It kept failing in a way that passes on its own: overloaded, rate
+        limited. The model never got to decide anything."""
+
+
+_TRANSIENT_STATUS = {408, 429, 500, 502, 503, 504, 529}
+
+
+def _body_error(error: Any) -> tuple[int, str]:
+    """An error object inside a 200, as OpenRouter sends upstream failures."""
+    if isinstance(error, dict):
+        try:
+            code = int(error.get("code") or 0)
+        except (TypeError, ValueError):
+            code = 0
+        return code, str(error.get("message") or error)[:500]
+    return 0, str(error)[:500]
+
+
+def _retry_after(headers: Any) -> float:
+    try:
+        value = headers.get("Retry-After") if headers is not None else None
+        return float(value) if value else 0.0
+    except (TypeError, ValueError):
+        return 0.0

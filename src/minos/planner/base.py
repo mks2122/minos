@@ -28,6 +28,9 @@ class Done:
 
     summary: str
     succeeded: bool = True
+    unavailable: bool = False
+    """The planner stopped because its model could not be reached, not because
+    it decided anything. An eval must not score that as a refusal."""
 
 
 Step = ActionRequest | Done

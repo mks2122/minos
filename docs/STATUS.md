@@ -1,6 +1,6 @@
 # Status
 
-Last updated 5 Oct 2026. **987 tests passing, 10 skipped. Reference eval 22/22, 0 invariant
+Last updated 5 Oct 2026. **997 tests passing, 10 skipped. Reference eval 22/22, 0 invariant
 violations. Ruff clean, mypy strict clean.**
 
 Written so nobody has to guess which parts are real.
@@ -43,7 +43,7 @@ Written so nobody has to guess which parts are real.
 
 | | |
 |---|---|
-| **Frontier model runs** | The Claude planner and the hosted providers are tested against fakes only. **No frontier or hosted model has been scored on the suite.** It is one command (`minos eval --planner openrouter --runs 3`) and an API key away, and this checkout has no key |
+| **Frontier model runs** | **No frontier model has been scored.** One hosted open model has, on part of the suite: Nemotron 3 Ultra (550B) via OpenRouter's free tier passed the 5 tasks it could be reached for, with 11 unavailable. A full run needs a paid key or a less loaded model |
 | **GUI on macOS/Linux** | `WindowsDriver` is Windows-only; `CuaDriver` is still the unimplemented seam for the other two |
 | **Real input delivery is untested** | Every synthetic event's *encoding* is tested; delivery is not, because a test suite must not drive the developer's cursor. Exercised by hand, and by `tests/gui/live_check.py` |
 | **The planner process can read and has the network** | Isolation refuses writes and new processes. Reads are not confined, and the network is needed to reach the model, so a compromised planner process could read a file and send it somewhere. A network allow-list for the child is not done |
@@ -75,8 +75,10 @@ a remote model. See [LOCAL.md](LOCAL.md).
 
 - **The 22/22 eval is the reference planner**, a fixed script. It proves the tasks are
   solvable and the runtime behaves. It says nothing about any model. The model figure is
-  **15/18 and 14/18 for `qwen3:8b`** over two runs on the 18-task alpha suite; a
-  three-run score on the current 22-task suite is being recorded with `--runs 3`.
+  **19/22 and 19/22 for `qwen3:8b`** over two runs on the current suite (the
+  per-task breakdown was lost; see [EVALUATION.md](../EVALUATION.md#beta-results-5-oct-2026)).
+  A hosted model, Nemotron 3 Ultra on OpenRouter's free tier, passed all 5 tasks it
+  could be reached for; 11 more were unavailable and are not counted.
 - **A bug in the broker is a full bypass.** The planner now runs outside the broker's
   process, but nothing stands behind the broker itself. See [SECURITY.md](../SECURITY.md).
 - **The GUI tasks run against a simulated desktop.** They measure the runtime's handling of
@@ -92,7 +94,7 @@ a remote model. See [LOCAL.md](LOCAL.md).
 | Criterion | Evidence |
 |---|---|
 | The broker is no longer in the planner's process | The planner runs in a confined child that cannot write files or start programs, verified on Windows by a test that has the child try both. See [SECURITY.md](../SECURITY.md#the-planner-runs-in-its-own-process) |
-| A model scored over several runs, with the spread published | `qwen3:8b`: 15/18 and 14/18 over two full runs, with per-task variance, in [EVALUATION.md](../EVALUATION.md). A three-run score on the 22-task suite is being recorded with `--runs 3` |
+| A model scored over several runs, with the spread published | `qwen3:8b`: 19/22 and 19/22 over two runs of the 22-task suite, after 15/18 and 14/18 on the alpha suite. See [EVALUATION.md](../EVALUATION.md#beta-results-5-oct-2026) |
 | GUI tasks in the eval suite | Three, on every CI run, with the window grant tested as a REFUSE task |
 | The container backend run end to end | 6/6 against a real engine, and the first run found and fixed a gap in what it records |
 | Context management that measures tokens | Every request fitted to the window; a 60-step run in a 6k window never sends one over budget; overflow errors recovered once, then reported |

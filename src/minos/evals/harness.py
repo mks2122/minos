@@ -85,12 +85,16 @@ class TaskResult:
     violations: tuple[str, ...] = ()
     """Broken runtime promises. A task may fail; the runtime may not."""
 
+    unavailable: bool = False
+    """The model could not be reached, so the run says nothing about it. Never
+    a pass -- a REFUSE task must not be won by a planner that never answered."""
+
     unverified_gui: int = 0
     """Of ``unverified_effects``, those that were L3 input with no files declared:
     a keystroke has no system of record until something is saved."""
 
     def row(self) -> str:
-        mark = "PASS" if self.succeeded else "FAIL"
+        mark = "N/A " if self.unavailable else ("PASS" if self.succeeded else "FAIL")
         return (
             f"  {mark}  {self.task_id:<34} {self.kind:<8} "
             f"{self.steps:>3} steps  {self.duration_s:>6.2f}s"
@@ -202,6 +206,7 @@ class EvalReport:
             "rollback_success_rate": round(self.rollback_success_rate, 4),
             "fallback_rate": round(self.fallback_rate, 4),
             "halted": self.halted,
+            "unavailable": sum(1 for r in self.results if r.unavailable),
             "audit_breaks": self.audit_breaks,
             "invariant_violations": len(self.violations),
             "median_duration_s": round(statistics.median(durations), 3),
@@ -218,6 +223,12 @@ class EvalReport:
         lines.extend(r.row() for r in self.results)
         lines.append("")
         lines.append(f"  success        {self.passed}/{self.total}  ({self.success_rate:.0%})")
+        unavailable = sum(1 for r in self.results if r.unavailable)
+        if unavailable:
+            lines.append(
+                f"  unavailable    {unavailable} task(s): the model could not be reached, "
+                "so they are neither passes nor evidence of failure"
+            )
         lines.append("")
         lines.append("  by kind")
         for kind, (passed, total) in self.by_kind().items():
@@ -324,8 +335,9 @@ def run_task(
                 close()
         duration = time.perf_counter() - started
 
+        unavailable = bool(trajectory.finished and trajectory.finished.unavailable)
         try:
-            succeeded = bool(task.check(workspace, trajectory)) and not error
+            succeeded = bool(task.check(workspace, trajectory)) and not error and not unavailable
         except Exception as exc:
             succeeded = False
             error = error or f"check raised {type(exc).__name__}: {exc}"
@@ -365,6 +377,7 @@ def run_task(
             rollback_successes=successes,
             unverified_effects=unverified,
             unverified_gui=unverified_gui,
+            unavailable=unavailable,
             verified_effects=verified,
             halted=any(o.halted for o in trajectory.outcomes),
             audit_intact=audit.verify() == [],

@@ -143,7 +143,12 @@ def _decode_observation(data: dict[str, Any]) -> Observation:
 
 def _encode_step(step: Step) -> dict[str, Any]:
     if isinstance(step, Done):
-        return {"kind": "done", "summary": step.summary, "succeeded": step.succeeded}
+        return {
+            "kind": "done",
+            "summary": step.summary,
+            "succeeded": step.succeeded,
+            "unavailable": step.unavailable,
+        }
     return {
         "kind": "action",
         "goal_id": step.goal_id,
@@ -160,9 +165,14 @@ def _decode_step(data: Any) -> Step:
     kind = data.get("kind")
     if kind == "done":
         summary, succeeded = data.get("summary"), data.get("succeeded")
-        if not isinstance(summary, str) or not isinstance(succeeded, bool):
+        unavailable = data.get("unavailable", False)
+        if (
+            not isinstance(summary, str)
+            or not isinstance(succeeded, bool)
+            or not isinstance(unavailable, bool)
+        ):
             raise PlannerProcessError("the planner process sent a malformed finish")
-        return Done(summary=summary[:10_000], succeeded=succeeded)
+        return Done(summary=summary[:10_000], succeeded=succeeded, unavailable=unavailable)
     if kind == "action":
         operation, params = data.get("operation"), data.get("params")
         intent, goal_id = data.get("intent", ""), data.get("goal_id", "task")

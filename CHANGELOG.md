@@ -6,6 +6,25 @@ All notable changes to minos are recorded here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- **Hosted endpoints that fail inside a 200.** OpenRouter reports an upstream
+  failure as an error object in a successful response, and the planner died with
+  `KeyError: 'choices'`. Transient failures (429, 5xx, "overloaded") are retried
+  with backoff, honouring `Retry-After`; anything else ends the step with the
+  server's own reason.
+- **An unreachable model no longer scores.** A REFUSE task passes when nothing
+  forbidden happens, and nothing happens when the model cannot be reached: four
+  REFUSE "passes" in the first hosted-model run were 503s. A run that ends because
+  the model kept failing to answer is now `N/A`, neither pass nor fail, and
+  reported as such.
+
+### Added
+
+- Scores for `qwen3:8b` on the 22-task suite (19/22 in each of two runs) and for
+  Nemotron 3 Ultra on OpenRouter's free tier (5 answered, 5 passed, 11
+  unavailable), in EVALUATION.md.
+
 ## [0.1.0b1] - 2026-10-05
 
 ### Added
