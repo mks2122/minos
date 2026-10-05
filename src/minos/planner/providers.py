@@ -308,6 +308,11 @@ def build_planner(
         timeout=timeout,
         thinking=thinking,
         max_tokens=0 if provider.local else 4096,
+        # A large hosted model loses nothing by seeing more of its own past;
+        # there the token budget bounds the conversation, not a count.
+        keep_exchanges=6 if provider.local else 40,
+        # Local: the size asked of the server. Hosted: discovered on first use.
+        context_window=context_tokens if provider.local else 0,
     )
 
 

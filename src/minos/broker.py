@@ -85,7 +85,7 @@ def always_deny(invocation: Invocation, decision: AdmissionDecision) -> bool:
     return False
 
 
-def cli_approver(invocation: Invocation, decision: AdmissionDecision) -> bool:
+def cli_approver(invocation: Invocation, decision: AdmissionDecision) -> bool | str:
     """Ask at the terminal, with nothing remembered between calls.
 
     The prompt itself lives in :mod:`minos.approval`; keep one

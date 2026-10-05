@@ -153,7 +153,8 @@ class Settings:
             f"  sandbox    : {self.sandbox_backend} backend, code treated as {self.sandbox_origin}",
         ]
         for name in sorted(os.environ):
-            if name.startswith("MINOS_") and any(m in name for m in _SECRET_MARKERS):
+            # Whole words: MINOS_CONTEXT_TOKENS is a size, not a token.
+            if name.startswith("MINOS_") and set(name.split("_")) & set(_SECRET_MARKERS):
                 lines.append(f"  {name.lower():<11}: set (hidden)")
         if any(k in os.environ for k in ("ANTHROPIC_API_KEY",)):
             lines.append("  anthropic  : API key set (hidden)")

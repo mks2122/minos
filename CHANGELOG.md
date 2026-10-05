@@ -8,6 +8,23 @@ All notable changes to minos are recorded here. The format follows
 
 ### Added
 
+- **Context management that measures tokens.** OpenAI-compatible planners (local
+  and hosted) fit each request to the model's window before sending it. The
+  system prompt and goal are always kept, the newest steps are kept while they
+  fit, and the steps dropped are named in one line. An oversized latest result
+  is shrunk at both ends rather than dropped. The token estimate is corrected
+  by the count the server reports. If the server still says the request is too
+  long, it is retried once at half the budget. A request that cannot fit at all
+  fails with a reason instead of being silently truncated by the server.
+- The window is now the one Ollama actually serves (its OpenAI endpoint ignores
+  `num_ctx`), or for a hosted model the one its `/models` reports, falling back
+  to 64k.
+- **The Claude planner clears old tool results server-side** (context editing,
+  `clear_tool_uses_20250919`) and caps each result before appending it. Its
+  history stays append-only, because editing earlier turns invalidates thinking
+  blocks on current models. `prompt is too long` and
+  `model_context_window_exceeded` end the run with a reason instead of a
+  traceback.
 - **Hosted providers.** `--planner openrouter` (or `openai`, `groq`, `together`,
   `deepseek`, `mistral`, `fireworks`, `gemini`, `xai`, `cerebras`) uses any hosted
   OpenAI-compatible API, and `--planner custom` uses any other one. Local presets

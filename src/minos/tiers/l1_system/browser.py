@@ -484,7 +484,7 @@ def _wait_for_front_window(suffix: str, timeout: float) -> str:
         return ""
     import ctypes
 
-    user32 = ctypes.windll.user32  # type: ignore[attr-defined]
+    user32 = ctypes.windll.user32  # type: ignore[attr-defined,unused-ignore]
     deadline = time.monotonic() + timeout
     title = ""
     while time.monotonic() < deadline:

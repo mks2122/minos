@@ -441,6 +441,11 @@ def _context_warning(planner: Any, base_url: str) -> str:
 
     try:
         served = _served_context(base_url, getattr(planner, "model", ""))
+        if served > 0 and hasattr(planner, "context_window"):
+            # Fit to what Ollama really serves, not to what was asked for: its
+            # OpenAI endpoint ignores num_ctx, and a planner budgeting for 16k
+            # against a 4k window is exactly the silent truncation this avoids.
+            planner.context_window = served
         return str(check(served))
     except Exception:
         # A diagnostic that breaks the run it is diagnosing is worse than none.

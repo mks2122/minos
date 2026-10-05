@@ -41,6 +41,7 @@ Measure it rather than trusting this docstring::
 
 from __future__ import annotations
 
+import io
 import json
 import urllib.error
 import urllib.request
@@ -51,6 +52,7 @@ from ..scopes import ScopeSet
 from ..types import ActionRequest
 from .base import Done, Observation, Step
 from .claude import system_prompt
+from .context import Budget, ContextOverflow, Estimator, Fitted, fit_messages, is_overflow_error
 from .schemas import operation_for_tool, tool_definitions
 
 __all__ = ["SUGGESTED_MODELS", "LocalPlanner", "server_available", "to_openai_tools"]
@@ -192,7 +194,23 @@ class LocalPlanner:
     it has all of one is how wrong answers get produced confidently."""
 
     keep_exchanges: int = 6
-    """Recent tool exchanges kept verbatim before older ones are summarised."""
+    """Most recent tool exchanges kept verbatim; older ones are summarised.
+
+    A ceiling, not a promise: fewer are kept when the token budget runs out
+    first. Small models plan worse with a long tail even when it fits."""
+
+    context_window: int = 0
+    """The window the conversation must fit, in tokens. 0 means: for a local
+    server, ``context_tokens``; for a hosted one, ask its ``/models`` once and
+    fall back to :data:`HOSTED_DEFAULT_WINDOW`. ``minos run`` sets it to what
+    Ollama actually serves, which is often less than what was asked for."""
+
+    last_context: Fitted | None = field(default=None, init=False)
+    """How the last request was fitted: tokens, steps dropped, results shrunk."""
+
+    _estimator: Estimator = field(default_factory=Estimator, init=False, repr=False)
+    _squeeze: float = field(default=1.0, init=False, repr=False)
+    _last_raw: int = field(default=0, init=False, repr=False)
 
     last_thinking: str = field(default="", init=False)
     """What the model said while choosing its last action.
@@ -203,7 +221,7 @@ class LocalPlanner:
 
     # -- Planner protocol --------------------------------------------------
 
-    def _explain_http_error(self, exc: urllib.error.HTTPError) -> str:
+    def _explain_http_error(self, exc: urllib.error.HTTPError, detail: str | None = None) -> str:
         """Say what the server actually objected to.
 
         A 404 from an OpenAI-compatible endpoint almost always means the model
@@ -211,12 +229,14 @@ class LocalPlanner:
         completely different fixes. Naming the installed models turns the
         message into the answer.
         """
-        detail = ""
-        try:
-            body = exc.read().decode("utf-8", "replace")
-            detail = json.loads(body).get("error", {}).get("message", "") or body[:200]
-        except (ValueError, OSError, AttributeError):
-            detail = exc.reason if isinstance(exc.reason, str) else ""
+        if detail is None:
+            detail = _error_detail(exc)
+        if is_overflow_error(detail):
+            return (
+                f"{self.label} says the request is larger than the model's context "
+                f"window, even after compaction ({detail}). Raise MINOS_CONTEXT_TOKENS "
+                "to match what the server serves, or use a model with a larger window."
+            )
 
         if exc.code == 404:
             if not self.local_server:
@@ -316,7 +336,9 @@ class LocalPlanner:
             self._messages.append(self._tool_result(observations[-1]))
 
         try:
-            payload = self._post()
+            payload = self._post_fitted()
+        except ContextOverflow as exc:
+            return Done(summary=f"the conversation no longer fits: {exc}", succeeded=False)
         except urllib.error.HTTPError as exc:
             # HTTPError subclasses URLError, so it must be caught first. The
             # server answered -- reporting "is the server running?" here sends
@@ -406,10 +428,56 @@ class LocalPlanner:
 
     # -- internals ---------------------------------------------------------
 
+    def window(self) -> int:
+        """The context window this planner fits its requests to."""
+        if not self.context_window:
+            if self.local_server:
+                self.context_window = self.context_tokens
+            else:
+                self.context_window = (
+                    discover_context(self.base_url, self.model, self._headers())
+                    or HOSTED_DEFAULT_WINDOW
+                )
+        return self.context_window
+
+    def budget(self) -> Budget:
+        tools = to_openai_tools(tool_definitions(self.operations))
+        window = int(self.window() * self._squeeze)
+        return Budget.for_window(
+            window, fixed=self._estimator.tokens(tools), max_output=self.max_tokens
+        )
+
+    def _post_fitted(self) -> dict[str, Any]:
+        """Send the conversation, fitted; on an overflow the server reports, once more.
+
+        Our estimate can be wrong -- a tokenizer that splits this text finer than
+        four characters a token, a server with a smaller window than it says.
+        The server's refusal is the ground truth, so the second attempt halves
+        the budget rather than retrying the identical request.
+        """
+        try:
+            return self._post()
+        except urllib.error.HTTPError as exc:
+            detail = _error_detail(exc)
+            if exc.code not in (400, 413) or not is_overflow_error(detail):
+                # The body is a stream and has now been read; hand on a copy.
+                raise urllib.error.HTTPError(
+                    exc.url,
+                    exc.code,
+                    str(exc.reason),
+                    exc.headers,
+                    io.BytesIO(json.dumps({"error": {"message": detail}}).encode()),
+                ) from exc
+        self._squeeze = 0.5
+        try:
+            return self._post()
+        finally:
+            self._squeeze = 1.0
+
     def _post(self) -> dict[str, Any]:
         request_body: dict[str, Any] = {
             "model": self.model,
-            "messages": self._compacted(),
+            "messages": self._compacted(),  # fitted to the window
             "tools": to_openai_tools(tool_definitions(self.operations)),
             "tool_choice": "auto",
             "temperature": self.temperature,
@@ -442,6 +510,9 @@ class LocalPlanner:
             )
         # Hosted APIs get neither of those fields: OpenAI rejects a request
         # carrying a parameter it does not know, rather than ignoring it.
+        self._last_raw = self._estimator.raw(request_body["messages"]) + self._estimator.raw(
+            request_body["tools"]
+        )
         body = json.dumps(request_body).encode()
 
         request = urllib.request.Request(
@@ -452,6 +523,10 @@ class LocalPlanner:
         )
         with urllib.request.urlopen(request, timeout=self.timeout) as response:
             parsed: dict[str, Any] = json.loads(response.read())
+        # What the server counted is the only honest token count there is.
+        usage = parsed.get("usage") if isinstance(parsed, dict) else None
+        if isinstance(usage, dict) and isinstance(usage.get("prompt_tokens"), int):
+            self._estimator.calibrate(self._last_raw, usage["prompt_tokens"])
         return parsed
 
     def _headers(self) -> dict[str, str]:
@@ -466,7 +541,7 @@ class LocalPlanner:
         )
 
     def _compacted(self) -> list[dict[str, Any]]:
-        """The conversation, trimmed to fit.
+        """The conversation, fitted to the context window.
 
         Growth is unbounded otherwise: every step appends an assistant message
         and a tool result, and a long task eventually pushes the system prompt
@@ -474,41 +549,20 @@ class LocalPlanner:
         never be evicted, so compaction happens here rather than being left to
         the server's blunt oldest-first truncation.
 
-        The rule: keep the system prompt and the opening goal always, keep the
-        last few exchanges verbatim, and replace everything between them with
-        one line naming what happened. A model that can see *that* it did six
-        things, and what they were, plans better than one whose history simply
-        stops.
+        The rule (see :func:`minos.planner.context.fit_messages`): keep the
+        system prompt and the goal always, keep the newest exchanges that fit
+        the token budget, and replace everything between with one line naming
+        what happened. Raises :class:`ContextOverflow` rather than sending a
+        request the server would silently truncate.
         """
-        if len(self._messages) <= 2 + self.keep_exchanges * 2:
-            return self._messages
-
-        head = self._messages[:2]  # system + the goal
-        tail = self._messages[-self.keep_exchanges * 2 :]
-        middle = self._messages[2 : -self.keep_exchanges * 2]
-
-        done: list[str] = []
-        for message in middle:
-            for call in message.get("tool_calls") or []:
-                name = call.get("function", {}).get("name")
-                if name:
-                    done.append(str(name))
-        if not done:
-            return head + tail
-
-        note = {
-            "role": "user",
-            "content": (
-                f"[{len(done)} earlier steps are omitted to save context. "
-                f"In order, you called: {', '.join(done)}. "
-                "Do not repeat work you have already done.]"
-            ),
-        }
-        # A tool result must directly follow its call, so never begin the tail
-        # on an orphaned one -- some servers reject the whole request for it.
-        while tail and tail[0].get("role") == "tool":
-            tail = tail[1:]
-        return [*head, note, *tail]
+        fitted = fit_messages(
+            self._messages,
+            self.budget(),
+            self._estimator,
+            max_units=self.keep_exchanges,
+        )
+        self.last_context = fitted
+        return fitted.messages
 
     def _tool_result(self, observation: Observation) -> dict[str, Any]:
         payload: dict[str, Any] = {
@@ -605,3 +659,53 @@ def _jsonable(value: Any) -> Any:
     if hasattr(value, "__slots__"):
         return {s: _jsonable(getattr(value, s, None)) for s in value.__slots__}
     return str(value)
+
+
+HOSTED_DEFAULT_WINDOW = 65536
+"""Assumed when a hosted provider does not say. Most current hosted models
+serve at least this; one that serves less is caught by its own overflow error
+and the halved retry."""
+
+
+def _error_detail(exc: urllib.error.HTTPError) -> str:
+    """The server's own words. Read once: the body is a stream."""
+    try:
+        body = exc.read().decode("utf-8", "replace")
+    except (OSError, AttributeError, ValueError):
+        body = ""
+    if not body:
+        return exc.reason if isinstance(exc.reason, str) else ""
+    try:
+        error = json.loads(body).get("error", {})
+        message = error.get("message", "") if isinstance(error, dict) else str(error)
+        return str(message) or body[:300]
+    except (ValueError, AttributeError):
+        return body[:300]
+
+
+def discover_context(base_url: str, model: str, headers: dict[str, str]) -> int:
+    """Ask an OpenAI-compatible server how large this model's window is.
+
+    Not part of the OpenAI API, so best effort: OpenRouter reports
+    ``context_length``, vLLM ``max_model_len``, others ``context_window``. Zero
+    means it did not say. Never raises -- a failed lookup must not fail a run.
+    """
+    try:
+        request = urllib.request.Request(
+            f"{base_url.rstrip('/')}/models", method="GET", headers=headers
+        )
+        with urllib.request.urlopen(request, timeout=3.0) as response:
+            data = json.loads(response.read().decode("utf-8"))
+        for entry in data.get("data", []):
+            if entry.get("id") != model:
+                continue
+            for key in ("context_length", "max_model_len", "context_window"):
+                value = entry.get(key)
+                if isinstance(value, int) and value > 0:
+                    return value
+            top = entry.get("top_provider") or {}
+            if isinstance(top.get("context_length"), int):
+                return int(top["context_length"])
+    except Exception:
+        return 0
+    return 0
