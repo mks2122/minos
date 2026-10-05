@@ -1,6 +1,6 @@
 # Security Model
 
-**Status: alpha (0.1.0a1). Do not point this at data you cannot afford to lose.**
+**Status: beta (0.1.0b1). Do not point this at data you cannot afford to lose.**
 
 ---
 
@@ -309,7 +309,7 @@ Include what you ran, what you expected to be contained, and what got out. A scr
 that demonstrates the escape is the most useful report there is. It is also exactly
 how this document's list of what does *not* hold was written.
 
-This is alpha software with a single maintainer, so there is no bug bounty and no
+This is beta software with a single maintainer, so there is no bug bounty and no
 guaranteed response time. Expect an acknowledgement within a week. A confirmed issue
 gets a fix, a note in [CHANGELOG.md](CHANGELOG.md), and credit if you want it.
 

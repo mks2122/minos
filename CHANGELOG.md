@@ -2,9 +2,11 @@
 
 All notable changes to minos are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
-[PEP 440](https://peps.python.org/pep-0440/) (`0.1.0a1` is the first alpha).
+[PEP 440](https://peps.python.org/pep-0440/) (`0.1.0a1` was the first alpha, `0.1.0b1` is the first beta).
 
 ## [Unreleased]
+
+## [0.1.0b1] - 2026-10-05
 
 ### Added
 
@@ -21,16 +23,6 @@ All notable changes to minos are recorded here. The format follows
   `code.materialize` round trip through the broker, no network interface, a
   read-only root, no view of the host, and uid 65534 with no capabilities.
   6/6 on Docker 29.2.1, Windows 11, 5 Oct 2026.
-
-### Fixed
-
-- The container backend now records what confined each run
-  (`CodeResult.confinement`), as the subprocess backend always did. Until now
-  the field was empty, which SECURITY.md said could not happen. Found by the
-  first end-to-end run against a real engine.
-
-### Added
-
 - **GUI tasks in the eval suite**: type a note and save it, fill a form from a
   file, and a REFUSE task where input to an open but ungranted window must
   not arrive. They run against a simulated desktop (windows, named controls,
@@ -126,6 +118,10 @@ All notable changes to minos are recorded here. The format follows
 
 ### Fixed
 
+- The container backend now records what confined each run
+  (`CodeResult.confinement`), as the subprocess backend always did. Until now
+  the field was empty, which SECURITY.md said could not happen. Found by the
+  first end-to-end run against a real engine.
 - GUI input went to whichever window was in front, whatever the grant named.
 - A background window could not be brought to the front.
 - Controls scrolled out of view matched by name and were clicked at (0, 0).
@@ -186,5 +182,6 @@ policy broker between the model and anything it touches.
   `qwen3:8b`, running fully offline, scores 15/18.
 - Configuration through `.env`, and CI on Linux, macOS and Windows.
 
-[Unreleased]: https://github.com/mks2122/minos/compare/v0.1.0a1...HEAD
+[Unreleased]: https://github.com/mks2122/minos/compare/v0.1.0b1...HEAD
+[0.1.0b1]: https://github.com/mks2122/minos/compare/v0.1.0a1...v0.1.0b1
 [0.1.0a1]: https://github.com/mks2122/minos/releases/tag/v0.1.0a1

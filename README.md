@@ -47,14 +47,16 @@ uv sync --all-extras && uv run python main.py
   disagrees with what was promised, it rolls back and says so.
 - 🧪 **Writes its own tools.** No adapter for PDF→Word? It writes a script, runs it in
   a sandbox, and the output is promoted under the same contract as any other write.
+- 🧱 **The planner cannot act.** It runs in its own process that cannot write a file
+  or start a program; it can only ask, and the broker decides.
 - 🔗 **Hash-chained audit log.** Every admission decision, tamper-evident.
 - 🚫 **Refusal is measured.** A third of the eval suite is things the agent *should
   fail* to do.
 - 💻 **Offline by default.** `--offline` makes it a guarantee, not a preference.
 
-> ⚠️ **Alpha. It edits your real files and can drive your real mouse.** A bug in the
+> ⚠️ **Beta. It edits your real files and can drive your real mouse.** A bug in the
 > broker is a full bypass — it is the only line of defence. Don't point it at data you
-> cannot afford to lose. [What alpha does and does not claim →](docs/STATUS.md)
+> cannot afford to lose. [What beta does and does not claim →](docs/STATUS.md)
 
 ---
 

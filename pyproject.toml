@@ -1,6 +1,6 @@
 [project]
 name = "minos"
-version = "0.1.0a1"
+version = "0.1.0b1"
 description = "A desktop agent runtime where the model asks and the runtime decides."
 readme = "README.md"
 requires-python = ">=3.11"
