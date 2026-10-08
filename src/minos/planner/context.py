@@ -220,18 +220,24 @@ def fit_messages(
 
     shrunk = 0
     if not kept:
-        # The newest exchange is too big on its own. Shrink its results.
+        # The newest exchange is too big on its own. Shrink the text in it --
+        # tool results first, then anything else with prose in it (a model
+        # that narrated a whole page back, a nudge) -- keeping tool calls
+        # whole, because a call without its arguments is not a call.
         newest = [dict(m) for m in units[-1]]
-        other = sum(estimator.message(m) for m in newest if m.get("role") != "tool")
-        results = [m for m in newest if m.get("role") == "tool"]
-        if results and other < room:
-            share = (room - other) // len(results)
-            for message in results:
+        fixed_part = sum(
+            estimator.tokens(m.get("tool_calls") or "") + MESSAGE_OVERHEAD for m in newest
+        )
+        texts = [m for m in newest if isinstance(m.get("content"), str) and m["content"]]
+        if texts and fixed_part < room:
+            share = (room - fixed_part) // len(texts)
+            for message in texts:
                 keep_chars = max(
                     int((share - MESSAGE_OVERHEAD) * CHARS_PER_TOKEN / estimator.ratio), 0
                 )
-                message["content"] = shrink_text(str(message.get("content", "")), keep_chars)
-                shrunk += 1
+                if estimator.tokens(message["content"]) > share:
+                    message["content"] = shrink_text(message["content"], keep_chars)
+                    shrunk += 1
             kept = [newest]
             used = sum(estimator.message(m) for m in newest)
         else:

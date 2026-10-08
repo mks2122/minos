@@ -475,3 +475,35 @@ def test_a_context_size_is_not_mistaken_for_a_secret(monkeypatch, tmp_path):
     lines = "\n".join(settings(dotenv=tmp_path / "none.env").describe())
     assert "minos_context_tokens" not in lines
     assert "minos_api_key" in lines and "sk-hidden" not in lines
+
+
+def test_an_oversized_reply_that_is_not_a_tool_result_is_shrunk_too():
+    """Found on a real LinkedIn run in a 6k window: the newest step was too big
+    and was not a tool result, and fitting gave up instead of shrinking it."""
+    head = [{"role": "system", "content": "s" * 400}, {"role": "user", "content": "g"}]
+    narrated = {"role": "assistant", "content": "the page says " + "z" * 30_000}
+    nudge = {"role": "user", "content": "Reply with exactly one tool call."}
+    budget = Budget(window=4000, fixed=0, reserve=500)
+
+    fitted = fit_messages([*head, narrated, nudge], budget)
+
+    assert fitted.tokens <= budget.available
+    assert fitted.messages[-1] == nudge
+    assert "z" * 30_000 not in str(fitted.messages)  # dropped or cut, never sent whole
+
+
+def test_the_newest_step_is_shrunk_but_its_tool_call_is_kept_whole():
+    head = [{"role": "system", "content": "s"}, {"role": "user", "content": "g"}]
+    call = {
+        "role": "assistant",
+        "content": "x" * 20_000,
+        "tool_calls": [{"id": "c", "function": {"name": "web_open", "arguments": '{"url": "u"}'}}],
+    }
+    page = {"role": "tool", "tool_call_id": "c", "content": "y" * 40_000}
+    budget = Budget(window=3000, fixed=0, reserve=500)
+
+    fitted = fit_messages([*head, call, page], budget)
+
+    assert fitted.messages[-2]["tool_calls"] == call["tool_calls"]
+    assert fitted.shrunk_results == 2
+    assert fitted.tokens <= budget.available + 50
