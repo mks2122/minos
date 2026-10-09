@@ -43,6 +43,7 @@ from __future__ import annotations
 
 import io
 import json
+import re
 import time
 import urllib.error
 import urllib.request
@@ -507,13 +508,24 @@ class LocalPlanner:
             except urllib.error.HTTPError as exc:
                 if exc.code not in _TRANSIENT_STATUS:
                     raise
+                # The server usually says how long to wait. A short wait is a
+                # per-minute limit and is worth sitting out; a long one is a
+                # daily quota, and waiting hours inside a run helps nobody --
+                # better to say so now, and let a fallback model take over.
+                told = _retry_after(exc.headers) or _retry_hint(_error_detail(exc))
+                if told > _LONGEST_WAIT:
+                    raise UpstreamError(
+                        f"{self.label} is out of quota (HTTP {exc.code}); it says to retry "
+                        f"in {_duration(told)}. Use another model or try again later.",
+                        transient=True,
+                    ) from exc
                 if last:
                     raise UpstreamError(
                         f"{self.label} is still unavailable after {self.retries + 1} "
                         f"attempts (HTTP {exc.code}). Try again later or pick another model.",
                         transient=True,
                     ) from exc
-                wait = _retry_after(exc.headers) or delay
+                wait = told or delay
             else:
                 error = payload.get("error") if isinstance(payload, dict) else None
                 if not error and isinstance(payload, dict) and payload.get("choices"):
@@ -531,7 +543,7 @@ class LocalPlanner:
                         transient=True,
                     )
                 wait = delay
-            time.sleep(min(wait, 30.0))
+            time.sleep(min(wait, _LONGEST_WAIT))
             delay *= 2
         raise UpstreamError(f"{self.label} could not be reached")  # pragma: no cover
 
@@ -763,6 +775,33 @@ serve at least this; one that serves less is caught by its own overflow error
 and the halved retry."""
 
 
+_LONGEST_WAIT = 90.0
+"""Longest wait sat out inside a run. Per-minute limits clear well within it;
+anything longer is a daily quota, and the run hands over instead of stalling."""
+
+_RETRY_IN = re.compile(r"retry in ((?:\d+(?:\.\d+)?[hms])+)", re.IGNORECASE)
+_RETRY_DELAY = re.compile(r'"retryDelay"\s*:\s*"(\d+(?:\.\d+)?)s"')
+
+
+def _retry_hint(detail: str) -> float:
+    """Seconds the server asked us to wait, from its message: "retry in 37.5s",
+    "retry in 3h52m48s", or Google's ``retryDelay``. 0 when it did not say."""
+    match = _RETRY_IN.search(detail)
+    if match:
+        total = 0.0
+        for amount, unit in re.findall(r"(\d+(?:\.\d+)?)([hms])", match.group(1)):
+            total += float(amount) * {"h": 3600, "m": 60, "s": 1}[unit.lower()]
+        return total
+    delay = _RETRY_DELAY.search(detail)
+    return float(delay.group(1)) if delay else 0.0
+
+
+def _duration(seconds: float) -> str:
+    hours, rest = divmod(int(seconds), 3600)
+    minutes = rest // 60
+    return f"{hours}h{minutes:02d}m" if hours else f"{minutes}m{int(rest % 60):02d}s"
+
+
 def _error_detail(exc: urllib.error.HTTPError) -> str:
     """The server's own words. Read once: the body is a stream."""
     try:
@@ -772,11 +811,15 @@ def _error_detail(exc: urllib.error.HTTPError) -> str:
     if not body:
         return exc.reason if isinstance(exc.reason, str) else ""
     try:
-        error = json.loads(body).get("error", {})
+        data = json.loads(body)
+        # Gemini's OpenAI endpoint wraps the error object in a list.
+        if isinstance(data, list) and data:
+            data = data[0]
+        error = data.get("error", {})
         message = error.get("message", "") if isinstance(error, dict) else str(error)
-        return str(message) or body[:300]
+        return str(message)[:2000] or body[:2000]
     except (ValueError, AttributeError):
-        return body[:300]
+        return body[:2000]
 
 
 def discover_context(base_url: str, model: str, headers: dict[str, str]) -> int:

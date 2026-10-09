@@ -128,15 +128,28 @@ class WebDriver(Protocol):
 # action can find exactly it, and describes it the way a screen reader would.
 # When a dialog is open its controls come first: that is where the next action
 # almost always is, and a page behind a modal cannot be clicked anyway.
+#
+# Open shadow roots are walked too. LinkedIn renders its post composer inside
+# one (#interop-outlet); a scan of the light DOM alone never saw the editor or
+# its Post button, so the model kept clicking "Start a post" through the
+# composer's own overlay. Playwright's CSS locators pierce open shadow roots,
+# so a ref set in there is found again by _locate.
 _SNAPSHOT_JS = r"""
 ([first, limit, textLimit]) => {
+  const deepAll = (root, sel) => {
+    const out = [...root.querySelectorAll(sel)];
+    for (const el of root.querySelectorAll('*')) {
+      if (el.shadowRoot) out.push(...deepAll(el.shadowRoot, sel));
+    }
+    return out;
+  };
   const SEL = [
     'a[href]', 'button', 'input:not([type=hidden])', 'textarea', 'select', 'summary',
     '[role=button]', '[role=link]', '[role=textbox]', '[role=menuitem]', '[role=tab]',
     '[role=checkbox]', '[role=radio]', '[role=combobox]', '[role=option]', '[role=switch]',
     '[contenteditable=""]', '[contenteditable="true"]'
   ].join(',');
-  for (const el of document.querySelectorAll('[data-minos-ref]')) {
+  for (const el of deepAll(document, '[data-minos-ref]')) {
     el.removeAttribute('data-minos-ref');
   }
   const clean = (t) => (t || '').replace(/\s+/g, ' ').trim();
@@ -153,8 +166,10 @@ _SNAPSHOT_JS = r"""
   const label = (el) => {
     const by = el.getAttribute('aria-labelledby');
     if (by) {
+      const scope = el.getRootNode && el.getRootNode().getElementById
+        ? el.getRootNode() : document;
       const t = clean(by.split(/\s+/).map((id) => {
-        const node = document.getElementById(id);
+        const node = scope.getElementById(id) || document.getElementById(id);
         return node ? node.innerText : '';
       }).join(' '));
       if (t) return t;
@@ -184,11 +199,11 @@ _SNAPSHOT_JS = r"""
     }
     return tag.toLowerCase();
   };
-  const dialogs = [...document.querySelectorAll(
-    '[role=dialog],[role=alertdialog],dialog[open],[aria-modal=true]'
-  )].filter(visible);
+  const dialogs = deepAll(
+    document, '[role=dialog],[role=alertdialog],dialog[open],[aria-modal=true]'
+  ).filter(visible);
   const root = dialogs.length ? dialogs[dialogs.length - 1] : document.body;
-  const found = [...root.querySelectorAll(SEL)].filter(visible);
+  const found = deepAll(root, SEL).filter(visible);
   found.sort((a, b) => inView(b) - inView(a));
   const elements = [];
   let n = first;
@@ -218,6 +233,31 @@ _SNAPSHOT_JS = r"""
   };
 }
 """
+
+
+class CoveredByOverlay(RuntimeError):
+    """The control is there, but something drawn over it takes the click."""
+
+
+def _clicked(click: Callable[[], Any]) -> None:
+    """Click, and say plainly when an overlay is in the way.
+
+    Playwright's own message is a page of retries ending in "intercepts pointer
+    events", which a model reads as "try again". The useful fact is that a
+    dialog or panel is open on top of the page, and the next action belongs in
+    it.
+    """
+    try:
+        click()
+    except Exception as exc:
+        if "intercepts pointer events" not in str(exc):
+            raise
+        raise CoveredByOverlay(
+            "something drawn over the page took the click: a dialog or panel is "
+            "open on top of it. Call web_snapshot -- an open dialog's controls are "
+            "listed first -- and act inside it, or press Escape to close it."
+        ) from None
+
 
 _LABEL_JS = r"""
 (el) => {
@@ -384,7 +424,7 @@ class PlaywrightDriver:
             return None
 
     def click(self, ref: str) -> None:
-        self._locate(ref).click(timeout=10_000)
+        _clicked(lambda: self._locate(ref).click(timeout=10_000))
         self._settle(self._page)
 
     def click_text(self, text: str) -> str:
@@ -398,7 +438,8 @@ class PlaywrightDriver:
                     f"{count} {role}s are named {text!r}; call web_snapshot and click by ref"
                 )
             if count == 1:
-                matches.first.click(timeout=10_000)
+                only = matches.first
+                _clicked(lambda: only.click(timeout=10_000))  # noqa: B023 - called at once
                 self._settle(page)
                 return role
         raise ValueError(f"no button or link is named {text!r}; call web_snapshot to see the names")

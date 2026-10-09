@@ -36,7 +36,11 @@ uv sync --all-extras && uv run python main.py
 ```
 
 <p align="center">
-  <img src="assets/demo.svg" alt="minos converting a PDF to Word with a local model, then undoing it" width="880">
+  <video src="assets/minos%20demo%20(edited).mp4" width="880" controls muted playsinline></video>
+</p>
+
+<p align="center">
+  <a href="assets/minos%20demo%20(edited).mp4">▶️ Watch the demo</a>
 </p>
 
 - 🔒 **Scoped, not sandboxed.** The model gets capabilities you typed on the command

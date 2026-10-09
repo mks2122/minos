@@ -176,3 +176,36 @@ def test_unavailable_survives_the_process_boundary():
 
     back = _decode_step(_encode_step(Done(summary="x", succeeded=False, unavailable=True)))
     assert isinstance(back, Done) and back.unavailable
+
+
+def _gemini_429(retry_in: str) -> urllib.error.HTTPError:
+    body = json.dumps(
+        [
+            {
+                "error": {
+                    "code": 429,
+                    "message": f"You exceeded your current quota. Please retry in {retry_in}.",
+                }
+            }
+        ]
+    ).encode()
+    return urllib.error.HTTPError("u", 429, "Too Many Requests", {}, io.BytesIO(body))
+
+
+def test_a_per_minute_limit_is_waited_out_as_long_as_the_server_says(monkeypatch, slept):
+    """Gemini's free tier: a few requests a minute, and it says how long to wait."""
+    monkeypatch.setattr(urllib.request, "urlopen", _Server([_gemini_429("37.6s"), OK]))
+    assert isinstance(_planner().next_action("goal", [], SCOPES), ActionRequest)
+    assert slept == [37.6]
+
+
+def test_an_exhausted_daily_quota_hands_over_at_once(monkeypatch, slept):
+    """Waiting hours inside a run helps nobody; a fallback model can take over now."""
+    server = _Server([_gemini_429("3h52m48.1s")])
+    monkeypatch.setattr(urllib.request, "urlopen", server)
+
+    done = _planner().next_action("goal", [], SCOPES)
+
+    assert isinstance(done, Done) and done.unavailable
+    assert "out of quota" in done.summary and "3h52m" in done.summary
+    assert server.calls == 1 and slept == []

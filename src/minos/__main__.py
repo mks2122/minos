@@ -27,6 +27,7 @@ from typing import TYPE_CHECKING, Any, TypeVar
 
 from . import __version__
 from .config import settings
+from .planner.fallback import FallbackPlanner
 
 if TYPE_CHECKING:
     from .broker import Approver
@@ -181,7 +182,12 @@ def execute_run(
     allow_browser = bool(getattr(args, "allow_browser", False) or args.allow_gui)
     # The web tier acts in pages without the mouse, so --allow-gui implies it:
     # it is strictly less reach than the real input device.
-    want_web = bool(getattr(args, "allow_web", False) or args.allow_gui)
+    # --no-web takes it back: websites then open in the person's own browser,
+    # in the profile memory remembers for that site, signed in as they are,
+    # and are driven with the real mouse and keyboard.
+    want_web = bool(getattr(args, "allow_web", False) or args.allow_gui) and not getattr(
+        args, "no_web", False
+    )
     web = want_web and playwright_available()
     if allow_browser or web:
         # Opening a page is a read; acting in one is web.input or ui.input.
@@ -274,6 +280,18 @@ def execute_run(
             if describe is not None:
                 isolated.append(planner)
                 print(f"isolation : planner {describe()}")
+
+        chain = _fallback_specs(args)
+        if chain:
+            try:
+                chained = _with_fallbacks(args, planner, chain, operations)
+            except ImportError as exc:
+                print(f"error: {exc}", file=sys.stderr)
+                release()
+                return RunReport(code=2)
+            isolated[:] = [chained]  # it closes every model in the chain
+            print(f"fallback  : {chained.describe()}")
+            planner = chained
     code_origin = _code_origin(args)
 
     gui_adapters: tuple[Adapter, ...] = ()
@@ -535,6 +553,45 @@ def _isolate(planner: Any) -> Any:
         return planner
     timeout = float(getattr(planner, "timeout", 600.0)) + 120.0
     return IsolatedPlanner.of(planner, timeout=timeout)
+
+
+def _fallback_specs(args: argparse.Namespace) -> list[str]:
+    """``--fallback`` flags, or MINOS_FALLBACK (comma-separated) when none were typed."""
+    typed = list(getattr(args, "fallback", None) or [])
+    if typed:
+        return typed
+    return [s.strip() for s in settings().fallback.split(",") if s.strip()]
+
+
+def _with_fallbacks(
+    args: argparse.Namespace, primary: Any, specs: list[str], operations: tuple[str, ...]
+) -> FallbackPlanner:
+    """Chain the primary planner with the fallbacks, each built as `--planner` would be.
+
+    A spec is ``PROVIDER:MODEL``, split at the first colon only, because
+    OpenRouter model ids carry their own (``google/gemma-4-31b-it:free``).
+    """
+    import copy
+
+    chain: list[tuple[str, Any]] = [
+        (f"{args.planner}:{getattr(primary, 'model', '') or 'default'}", primary)
+    ]
+    for spec in specs:
+        provider, _, model = spec.partition(":")
+        if not provider or not model:
+            raise ImportError(
+                f"--fallback {spec!r} should be PROVIDER:MODEL, e.g. gemini:gemini-3.5-flash"
+            )
+        if provider not in PLANNER_CHOICES or provider == "auto":
+            raise ImportError(f"--fallback {spec!r}: unknown provider {provider!r}")
+        sub = copy.copy(args)
+        sub.planner, sub.model = provider, model
+        planner = _planner(sub, operations)
+        args.planner_hosted = bool(args.planner_hosted or sub.planner_hosted)
+        if getattr(args, "isolate_planner", False):
+            planner = _isolate(planner)
+        chain.append((spec, planner))
+    return FallbackPlanner(chain)
 
 
 def _context_warning(planner: Any, base_url: str) -> str:
@@ -1004,6 +1061,15 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     run.add_argument(
+        "--no-web",
+        action="store_true",
+        help=(
+            "with --allow-gui, do not use the web tier: open sites in your own browser, "
+            "in the profile remembered for each site (already signed in), and drive "
+            "them with the real mouse and keyboard"
+        ),
+    )
+    run.add_argument(
         "--allow-web",
         action="store_true",
         help=(
@@ -1078,6 +1144,16 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         default=cfg.sandbox_allow_downgrade,
         help="let untrusted code run without a container when none is available",
+    )
+    run.add_argument(
+        "--fallback",
+        action="append",
+        metavar="PROVIDER:MODEL",
+        help=(
+            "another model to take over if the current one becomes unavailable "
+            "(quota, overload) mid-task, e.g. gemini:gemini-3.5-flash. Repeat for a "
+            "chain. A refusal is never handed on (MINOS_FALLBACK)"
+        ),
     )
     run.add_argument(
         "--in-process-planner",

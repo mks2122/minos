@@ -60,6 +60,8 @@ DEFAULTS: dict[str, str] = {
     # The planner runs in a child process that cannot write files or start
     # programs; only the broker's process can act. 0 keeps it in-process.
     "MINOS_ISOLATE_PLANNER": "1",
+    # Models that take over, in order, when the current one is unavailable.
+    "MINOS_FALLBACK": "",
 }
 """Every knob, with the value you get if you set nothing.
 
@@ -131,6 +133,7 @@ class Settings:
     planner_timeout: float
     thinking: bool
     isolate_planner: bool
+    fallback: str
     source: dict[str, str] = field(default_factory=dict, repr=False)
     """Where each value came from, for `minos doctor`. Names only, no values."""
 
@@ -225,5 +228,6 @@ def settings(dotenv: Path | str | None = ".env") -> Settings:
         planner_timeout=_as_float(values["MINOS_PLANNER_TIMEOUT"], 600.0),
         thinking=_as_bool(values["MINOS_THINKING"]),
         isolate_planner=_as_bool(values["MINOS_ISOLATE_PLANNER"]),
+        fallback=values["MINOS_FALLBACK"],
         source=source,
     )
